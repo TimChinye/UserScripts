@@ -37,8 +37,6 @@ Here is a list of the scripts currently available in this repository.
 | **MooMoo.io Scroll Wheel Inventory** | Allows using the mouse scroll wheel to quickly cycle through inventory items in MooMoo.io. | [Install](https://raw.githubusercontent.com/TimChinye/UserScripts/refs/heads/main/MooMoo.io%20Scroll%20Wheel%20Inventory/script.user.js) |
 | **MooMoo.io Utility Mod** | A collection of general utilities and helpers for playing MooMoo.io. | [Install](https://raw.githubusercontent.com/TimChinye/UserScripts/refs/heads/main/MooMoo.io%20Utility%20Mod/script.user.js) |
 
-*A note on filenames: The original downloaded filenames have been cleaned up for better organization (e.g., `JS script.user.js MooMoo.io Insane Mod` is now `moomoo-insane-mod.user.js`).*
-
 ---
 
 ## 🤝 Contributing
