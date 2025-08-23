@@ -4,7 +4,7 @@
 // @description  This mod adds a number of mini-mods to enhance your MooMoo.io experience whilst not being too unfair to non-script users.
 // @license      GNU GPLv3 with the condition: no auto-heal or instant kill features may be added to the licensed material.
 // @author       TigerYT
-// @version      0.5.6
+// @version      0.5.7
 // @grant        none
 // @match        *://moomoo.io/*
 // @match        *://dev.moomoo.io/*
@@ -843,9 +843,6 @@ C = Added patches
             // Wait for Game UI to load before proceeding
             const gameUI = document.getElementById(C.DOM.GAME_UI);
             this.core.waitForVisible(gameUI).then(() => {
-                // --- Set up observers for dynamic UI adjustments ---
-                this.setupStoreMenuObservers();
-
                 // --- Scrape initial state from the DOM ---
                 const resElements = document.getElementById(C.DOM.RESOURCE_DISPLAY).children;
                 this.core.state.playerResources = {
@@ -991,54 +988,6 @@ C = Added patches
             this.refreshEquippableState(C.GAME_STATE.NO_SCROLL);
         },
 
-        /**
-         * Adds "Pin" / "Unpin" buttons to owned wearable items in the store.
-         */
-        addPinButtons() {
-            const CoreC = this.core.data.constants;
-            const wearablesMod = this.core.miniMods.find(m => m.name === "Wearables Toolbar");
-            if (!wearablesMod) return;
-
-            const C = wearablesMod.constants; // Wearables Constants
-            const storeHolder = document.getElementById(CoreC.DOM.STORE_HOLDER);
-
-            Array.from(storeHolder.children).forEach((storeItem) => {
-                const joinBtn = storeItem.querySelector('.' + C.DOM.JOIN_ALLIANCE_BUTTON_CLASS);
-                const img = storeItem.querySelector('img');
-
-                if (storeItem.querySelector(`.${C.DOM.PIN_BUTTON_CLASS}`)) return;
-                if (!joinBtn || !img || !joinBtn.textContent.toLowerCase().includes(C.TEXT.EQUIP_BUTTON_TEXT)) return;
-
-                let id, type;
-                const hatMatch = img.src.match(C.REGEX.HAT_IMG);
-                const accMatch = img.src.match(C.REGEX.ACCESSORY_IMG);
-
-                if (hatMatch) {
-                    id = parseInt(hatMatch[1]);
-                    type = CoreC.WEARABLE_TYPES.HAT;
-                } else if (accMatch) {
-                    id = parseInt(accMatch[1]);
-                    type = CoreC.WEARABLE_TYPES.ACCESSORY;
-                } else {
-                    return; // Not a wearable item
-                }
-
-                const isPinned = wearablesMod.isWearablePinned(id);
-                const pinButton = document.createElement('div');
-                pinButton.className = `${C.DOM.JOIN_ALLIANCE_BUTTON_CLASS} ${C.DOM.PIN_BUTTON_CLASS}`;
-                pinButton.style.marginTop = '5px';
-                pinButton.textContent = isPinned ? C.TEXT.UNPIN : C.TEXT.PIN;
-
-                pinButton.addEventListener('click', () => {
-                    const isNowPinned = wearablesMod.togglePin(id, type);
-                    pinButton.textContent = isNowPinned ? C.TEXT.UNPIN : C.TEXT.PIN;
-                    wearablesMod.refreshToolbarVisibility();
-                });
-
-                joinBtn.insertAdjacentElement('afterend', pinButton);
-            });
-        },
-
         // --- UI & HELPER FUNCTIONS ---
 
         /**
@@ -1055,40 +1004,6 @@ C = Added patches
                 item.style.border = item === selectedItem ? C.CSS.SELECTION_BORDER_STYLE : C.CSS.BORDER_NONE;
                 item.style.filter = this.core.isEquippableItem(item) ? C.CSS.FILTER_Equippable : C.CSS.FILTER_Unequippable;
             });
-        },
-        
-        /** Sets up observers to dynamically resize the store menu and add pin buttons when it opens. */
-        setupStoreMenuObservers() {
-            const C = this.core.data.constants;
-            const storeMenu = document.getElementById(C.DOM.STORE_MENU);
-            storeMenu.style.transform = C.CSS.STORE_MENU_TRANSFORM;
-
-            const upgradeHolder = document.getElementById(C.DOM.UPGRADE_HOLDER);
-            const upgradeCounter = document.getElementById(C.DOM.UPGRADE_COUNTER);
-
-            const initialCheck = () => {
-                const upgradeHolderVisible = upgradeHolder.style.display === C.CSS.DISPLAY_BLOCK;
-                const upgradeCounterVisible = upgradeCounter.style.display === C.CSS.DISPLAY_BLOCK;
-                const isExpanded = upgradeHolderVisible && upgradeCounterVisible;
-                storeMenu.classList.toggle(C.DOM.STORE_MENU_EXPANDED_CLASS, isExpanded);
-            };
-
-            const upgradeObserver = new MutationObserver(initialCheck);
-            upgradeObserver.observe(upgradeHolder, { attributes: true, attributeFilter: ['style'] });
-            upgradeObserver.observe(upgradeCounter, { attributes: true, attributeFilter: ['style'] });
-            initialCheck();
-
-            const storeMenuObserver = new MutationObserver((mutationsList) => {
-                for (const mutation of mutationsList) {
-                    if (storeMenu.style.display === C.CSS.DISPLAY_BLOCK && mutation.oldValue.includes(`display: ${C.CSS.DISPLAY_NONE}`)) {
-                        this.addPinButtons();
-                    }
-                }
-            });
-            storeMenuObserver.observe(storeMenu, { attributes: true, attributeFilter: ['style'], attributeOldValue: true });
-
-            const storeHolderObserver = new MutationObserver(() => this.addPinButtons());
-            storeHolderObserver.observe(document.getElementById(C.DOM.STORE_HOLDER), { childList: true });
         },
 
         _isInputFocused() {
@@ -1185,48 +1100,15 @@ C = Added patches
                 const gameUI = document.getElementById(C.DOM.GAME_UI);
                 this.core.waitForVisible(gameUI).then(() => {
                     this.injectCSS();
-                    this.createUI();
+
+                    this.createWearablesToolbarUI();
                     this.setupDynamicPositioning();
+                    this.setupStoreMenuObservers();
                 });
             }
         },
 
         // --- INITIAL UI SETUP ---
-
-        /**
-         * Creates the HTML structure for the wearables toolbar and appends it to the document body.
-         */
-        createUI() {
-            const C = this.constants;
-            const CoreC = this.core.data.constants;
-
-            const container = document.createElement('div');
-            container.id = C.DOM.WEARABLES_TOOLBAR;
-            container.innerHTML = `
-                <h1>Wearables Toolbar <span>(Press '${C.HOTKEYS.TOGGLE_WEARABLES}' to toggle)</span></h1>
-                <div id="${C.DOM.WEARABLES_HATS}" class="${C.DOM.WEARABLES_GRID_CLASS}"></div>
-                <div id="${C.DOM.WEARABLES_ACCESSORIES}" class="${C.DOM.WEARABLES_GRID_CLASS}"></div>
-            `;
-            
-            document.getElementById(CoreC.DOM.GAME_UI).prepend(container);
-
-            const hatsGrid = container.querySelector(`#${C.DOM.WEARABLES_HATS}`);
-            const accessoriesGrid = container.querySelector(`#${C.DOM.WEARABLES_ACCESSORIES}`);
-
-            hatsGrid.addEventListener('dragover', this.handleDragOver.bind(this));
-            accessoriesGrid.addEventListener('dragover', this.handleDragOver.bind(this));
-
-            document.addEventListener('keydown', (e) => {
-                const visibleInputs = [CoreC.DOM.CHAT_HOLDER, CoreC.DOM.ALLIANCE_MENU, CoreC.DOM.STORE_MENU];
-                const isInputFocused = visibleInputs.some(id => document.getElementById(id)?.style.display === CoreC.CSS.DISPLAY_BLOCK);
-                if (isInputFocused) return;
-
-                if (e.key.toUpperCase() === C.HOTKEYS.TOGGLE_WEARABLES) {
-                    this.state.isVisible = !this.state.isVisible;
-                    container.style.display = this.state.isVisible ? CoreC.CSS.DISPLAY_BLOCK : CoreC.CSS.DISPLAY_NONE;
-                }
-            });
-        },
 
         /**
          * Injects the CSS rules required for styling the wearables toolbar and its buttons.
@@ -1333,6 +1215,41 @@ C = Added patches
             `;
             document.head.append(style);
         },
+
+        /**
+         * Creates the HTML structure for the wearables toolbar and appends it to the document body.
+         */
+        createWearablesToolbarUI() {
+            const C = this.constants;
+            const CoreC = this.core.data.constants;
+
+            const container = document.createElement('div');
+            container.id = C.DOM.WEARABLES_TOOLBAR;
+            container.innerHTML = `
+                <h1>Wearables Toolbar <span>(Press '${C.HOTKEYS.TOGGLE_WEARABLES}' to toggle)</span></h1>
+                <div id="${C.DOM.WEARABLES_HATS}" class="${C.DOM.WEARABLES_GRID_CLASS}"></div>
+                <div id="${C.DOM.WEARABLES_ACCESSORIES}" class="${C.DOM.WEARABLES_GRID_CLASS}"></div>
+            `;
+            
+            document.getElementById(CoreC.DOM.GAME_UI).prepend(container);
+
+            const hatsGrid = container.querySelector(`#${C.DOM.WEARABLES_HATS}`);
+            const accessoriesGrid = container.querySelector(`#${C.DOM.WEARABLES_ACCESSORIES}`);
+
+            hatsGrid.addEventListener('dragover', this.handleDragOver.bind(this));
+            accessoriesGrid.addEventListener('dragover', this.handleDragOver.bind(this));
+
+            document.addEventListener('keydown', (e) => {
+                const visibleInputs = [CoreC.DOM.CHAT_HOLDER, CoreC.DOM.ALLIANCE_MENU, CoreC.DOM.STORE_MENU];
+                const isInputFocused = visibleInputs.some(id => document.getElementById(id)?.style.display === CoreC.CSS.DISPLAY_BLOCK);
+                if (isInputFocused) return;
+
+                if (e.key.toUpperCase() === C.HOTKEYS.TOGGLE_WEARABLES) {
+                    this.state.isVisible = !this.state.isVisible;
+                    container.style.display = this.state.isVisible ? CoreC.CSS.DISPLAY_BLOCK : CoreC.CSS.DISPLAY_NONE;
+                }
+            });
+        },
         
         /**
          * Sets up an observer to dynamically shift the toolbar's position
@@ -1360,6 +1277,40 @@ C = Added patches
 
             // Run once at the start to set the initial position.
             updatePosition();
+        },
+        
+        /** Sets up observers to dynamically resize the store menu and add pin buttons when it opens. */
+        setupStoreMenuObservers() {
+            const C = this.core.data.constants;
+            const storeMenu = document.getElementById(C.DOM.STORE_MENU);
+            storeMenu.style.transform = C.CSS.STORE_MENU_TRANSFORM;
+
+            const upgradeHolder = document.getElementById(C.DOM.UPGRADE_HOLDER);
+            const upgradeCounter = document.getElementById(C.DOM.UPGRADE_COUNTER);
+
+            const initialCheck = () => {
+                const upgradeHolderVisible = upgradeHolder.style.display === C.CSS.DISPLAY_BLOCK;
+                const upgradeCounterVisible = upgradeCounter.style.display === C.CSS.DISPLAY_BLOCK;
+                const isExpanded = upgradeHolderVisible && upgradeCounterVisible;
+                storeMenu.classList.toggle(C.DOM.STORE_MENU_EXPANDED_CLASS, isExpanded);
+            };
+
+            const upgradeObserver = new MutationObserver(initialCheck);
+            upgradeObserver.observe(upgradeHolder, { attributes: true, attributeFilter: ['style'] });
+            upgradeObserver.observe(upgradeCounter, { attributes: true, attributeFilter: ['style'] });
+            initialCheck();
+
+            const storeMenuObserver = new MutationObserver((mutationsList) => {
+                for (const mutation of mutationsList) {
+                    if (storeMenu.style.display === C.CSS.DISPLAY_BLOCK && mutation.oldValue.includes(`display: ${C.CSS.DISPLAY_NONE}`)) {
+                        this.addPinButtons();
+                    }
+                }
+            });
+            storeMenuObserver.observe(storeMenu, { attributes: true, attributeFilter: ['style'], attributeOldValue: true });
+
+            const storeHolderObserver = new MutationObserver(() => this.addPinButtons());
+            storeHolderObserver.observe(document.getElementById(C.DOM.STORE_HOLDER), { childList: true });
         },
         
         // --- UI MANIPULATION & STATE UPDATES ---
@@ -1448,6 +1399,54 @@ C = Added patches
         },
         
         // --- PINNING LOGIC ---
+
+        /**
+         * Adds "Pin" / "Unpin" buttons to owned wearable items in the store.
+         */
+        addPinButtons() {
+            const CoreC = this.core.data.constants;
+            const wearablesMod = this.core.miniMods.find(m => m.name === "Wearables Toolbar");
+            if (!wearablesMod) return;
+
+            const C = wearablesMod.constants; // Wearables Constants
+            const storeHolder = document.getElementById(CoreC.DOM.STORE_HOLDER);
+
+            Array.from(storeHolder.children).forEach((storeItem) => {
+                const joinBtn = storeItem.querySelector('.' + C.DOM.JOIN_ALLIANCE_BUTTON_CLASS);
+                const img = storeItem.querySelector('img');
+
+                if (storeItem.querySelector(`.${C.DOM.PIN_BUTTON_CLASS}`)) return;
+                if (!joinBtn || !img || !joinBtn.textContent.toLowerCase().includes(C.TEXT.EQUIP_BUTTON_TEXT)) return;
+
+                let id, type;
+                const hatMatch = img.src.match(C.REGEX.HAT_IMG);
+                const accMatch = img.src.match(C.REGEX.ACCESSORY_IMG);
+
+                if (hatMatch) {
+                    id = parseInt(hatMatch[1]);
+                    type = CoreC.WEARABLE_TYPES.HAT;
+                } else if (accMatch) {
+                    id = parseInt(accMatch[1]);
+                    type = CoreC.WEARABLE_TYPES.ACCESSORY;
+                } else {
+                    return; // Not a wearable item
+                }
+
+                const isPinned = wearablesMod.isWearablePinned(id);
+                const pinButton = document.createElement('div');
+                pinButton.className = `${C.DOM.JOIN_ALLIANCE_BUTTON_CLASS} ${C.DOM.PIN_BUTTON_CLASS}`;
+                pinButton.style.marginTop = '5px';
+                pinButton.textContent = isPinned ? C.TEXT.UNPIN : C.TEXT.PIN;
+
+                pinButton.addEventListener('click', () => {
+                    const isNowPinned = wearablesMod.togglePin(id, type);
+                    pinButton.textContent = isNowPinned ? C.TEXT.UNPIN : C.TEXT.PIN;
+                    wearablesMod.refreshToolbarVisibility();
+                });
+
+                joinBtn.insertAdjacentElement('afterend', pinButton);
+            });
+        },
 
         isWearablePinned(id) {
             return this.state.pinnedWearables.has(id);
