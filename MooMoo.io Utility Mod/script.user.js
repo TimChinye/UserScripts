@@ -4,7 +4,7 @@
 // @description  This mod adds a number of mini-mods to enhance your MooMoo.io experience whilst not being too unfair to non-script users.
 // @license      GNU GPLv3 with the condition: no auto-heal or instant kill features may be added to the licensed material.
 // @author       TigerYT
-// @version      0.5.4
+// @version      0.5.6
 // @grant        none
 // @match        *://moomoo.io/*
 // @match        *://dev.moomoo.io/*
@@ -15,8 +15,8 @@
 
 /*
 Version numbers: A.B.C
-A = Added a bunch of mods
-B = Added a single mod
+A = Added or made a major change to multiple mini-mods
+B = Added or made a major change to a feature (a whole mini-mod, or major parts within a mini-mod)
 C = Added patches
 */
 
@@ -144,7 +144,6 @@ C = Added patches
                     // Selectors / Patterns / Classes
                     ACTION_BAR_ITEM_REGEX: /^actionBarItem(\d+)$/,
                     ACTION_BAR_ITEM_CLASS: '.actionBarItem',
-                    STORE_MENU_COMPACT_CLASS: 'compact',
                     STORE_MENU_EXPANDED_CLASS: 'expanded',
                     STORE_TAB_CLASS: 'storeTab',
                 },
@@ -996,43 +995,43 @@ C = Added patches
          * Adds "Pin" / "Unpin" buttons to owned wearable items in the store.
          */
         addPinButtons() {
-            const C = this.core.data.constants;
+            const CoreC = this.core.data.constants;
             const wearablesMod = this.core.miniMods.find(m => m.name === "Wearables Toolbar");
             if (!wearablesMod) return;
 
-            const WC = wearablesMod.constants; // Wearables Constants
-            const storeHolder = document.getElementById(C.DOM.STORE_HOLDER);
+            const C = wearablesMod.constants; // Wearables Constants
+            const storeHolder = document.getElementById(CoreC.DOM.STORE_HOLDER);
 
             Array.from(storeHolder.children).forEach((storeItem) => {
-                const joinBtn = storeItem.querySelector(WC.DOM.JOIN_ALLIANCE_BUTTON_CLASS);
+                const joinBtn = storeItem.querySelector('.' + C.DOM.JOIN_ALLIANCE_BUTTON_CLASS);
                 const img = storeItem.querySelector('img');
 
-                if (storeItem.querySelector(`.${WC.DOM.PIN_BUTTON_CLASS}`)) return;
-                if (!joinBtn || !img || !joinBtn.textContent.toLowerCase().includes(WC.TEXT.EQUIP_BUTTON_TEXT)) return;
+                if (storeItem.querySelector(`.${C.DOM.PIN_BUTTON_CLASS}`)) return;
+                if (!joinBtn || !img || !joinBtn.textContent.toLowerCase().includes(C.TEXT.EQUIP_BUTTON_TEXT)) return;
 
                 let id, type;
-                const hatMatch = img.src.match(WC.REGEX.HAT_IMG);
-                const accMatch = img.src.match(WC.REGEX.ACCESSORY_IMG);
+                const hatMatch = img.src.match(C.REGEX.HAT_IMG);
+                const accMatch = img.src.match(C.REGEX.ACCESSORY_IMG);
 
                 if (hatMatch) {
                     id = parseInt(hatMatch[1]);
-                    type = C.WEARABLE_TYPES.HAT;
+                    type = CoreC.WEARABLE_TYPES.HAT;
                 } else if (accMatch) {
                     id = parseInt(accMatch[1]);
-                    type = C.WEARABLE_TYPES.ACCESSORY;
+                    type = CoreC.WEARABLE_TYPES.ACCESSORY;
                 } else {
                     return; // Not a wearable item
                 }
 
                 const isPinned = wearablesMod.isWearablePinned(id);
                 const pinButton = document.createElement('div');
-                pinButton.className = `${WC.DOM.JOIN_ALLIANCE_BUTTON_CLASS.substring(1)} ${WC.DOM.PIN_BUTTON_CLASS}`;
+                pinButton.className = `${C.DOM.JOIN_ALLIANCE_BUTTON_CLASS} ${C.DOM.PIN_BUTTON_CLASS}`;
                 pinButton.style.marginTop = '5px';
-                pinButton.textContent = isPinned ? WC.TEXT.UNPIN : WC.TEXT.PIN;
+                pinButton.textContent = isPinned ? C.TEXT.UNPIN : C.TEXT.PIN;
 
                 pinButton.addEventListener('click', () => {
                     const isNowPinned = wearablesMod.togglePin(id, type);
-                    pinButton.textContent = isNowPinned ? WC.TEXT.UNPIN : WC.TEXT.PIN;
+                    pinButton.textContent = isNowPinned ? C.TEXT.UNPIN : C.TEXT.PIN;
                     wearablesMod.refreshToolbarVisibility();
                 });
 
@@ -1072,7 +1071,6 @@ C = Added patches
                 const upgradeCounterVisible = upgradeCounter.style.display === C.CSS.DISPLAY_BLOCK;
                 const isExpanded = upgradeHolderVisible && upgradeCounterVisible;
                 storeMenu.classList.toggle(C.DOM.STORE_MENU_EXPANDED_CLASS, isExpanded);
-                storeMenu.classList.toggle(C.DOM.STORE_MENU_COMPACT_CLASS, !isExpanded);
             };
 
             const upgradeObserver = new MutationObserver(initialCheck);
@@ -1122,16 +1120,17 @@ C = Added patches
                 EQUIP_BUTTON_TEXT: 'equip',
             },
             DOM: {
+                ITEM_INFO_HOLDER: 'itemInfoHolder',
                 WEARABLES_TOOLBAR: 'wearablesToolbar',
                 WEARABLES_HATS: 'wearablesHats',
                 WEARABLES_ACCESSORIES: 'wearablesAccessories',
                 WEARABLES_GRID_CLASS: 'wearables-grid',
                 WEARABLE_BUTTON_CLASS: 'wearable-btn',
                 WEARABLE_BUTTON_ID_PREFIX: 'wearable-btn-',
-                JOIN_ALLIANCE_BUTTON_CLASS: '.joinAlBtn',
+                JOIN_ALLIANCE_BUTTON_CLASS: 'joinAlBtn',
                 PIN_BUTTON_CLASS: 'pinBtn',
                 WEARABLE_SELECTED_CLASS: 'selected',
-                WEARABLE_DRAGGING_CLASS: 'dragging',
+                WEARABLE_DRAGGING_CLASS: 'dragging'
             },
             CSS: {
                 DRAGGING_OPACITY: '0.5',
@@ -1187,6 +1186,7 @@ C = Added patches
                 this.core.waitForVisible(gameUI).then(() => {
                     this.injectCSS();
                     this.createUI();
+                    this.setupDynamicPositioning();
                 });
             }
         },
@@ -1237,6 +1237,9 @@ C = Added patches
             const style = document.createElement('style');
             style.textContent = `
                 #${CoreC.DOM.STORE_MENU} {
+                    top: 20px;
+                    height: calc(100% - 240px);
+
                     --extended-width: 80px;
 
                     .${CoreC.DOM.STORE_TAB_CLASS} {
@@ -1246,11 +1249,6 @@ C = Added patches
                     #${CoreC.DOM.STORE_HOLDER} {
                         height: 100%;
                         width: calc(400px + var(--extended-width));
-                    }
-
-                    &.${CoreC.DOM.STORE_MENU_COMPACT_CLASS} {
-                        top: 20px;
-                        height: calc(100% - 240px);
                     }
 
                     &.${CoreC.DOM.STORE_MENU_EXPANDED_CLASS} {
@@ -1263,15 +1261,20 @@ C = Added patches
                     --text-color: hsl(from #80eefc calc(h + 215) s l);
                     color: var(--text-color);
                     padding-right: 5px;
+
                     &:hover {
                         color: hsl(from var(--text-color) h calc(s * 0.5) calc(l * 0.75));
                     }
                 }
 
+                #${C.DOM.ITEM_INFO_HOLDER} {
+                    top: calc(20px + var(--top-offset, 0px));
+                }
+
                 #${C.DOM.WEARABLES_TOOLBAR} {
                     position: absolute;
-                    left: 10px;
-                    top: 10px;
+                    left: 20px;
+                    top: 20px;
                     padding: 7px 10px 5px;
                     width: auto;
                     max-width: 440px;
@@ -1329,6 +1332,34 @@ C = Added patches
                 }
             `;
             document.head.append(style);
+        },
+        
+        /**
+         * Sets up an observer to dynamically shift the toolbar's position
+         * based on the visibility and height of the item info box.
+         */
+        setupDynamicPositioning() {
+            const C = this.constants;
+            const toolbar = document.getElementById(C.DOM.WEARABLES_TOOLBAR);
+            const infoHolder = document.getElementById(C.DOM.ITEM_INFO_HOLDER);
+
+            if (!toolbar || !infoHolder) {
+                Logger.warn("Could not find toolbar or info holder for dynamic positioning.");
+                return;
+            }
+
+            const updatePosition = () => {
+                const isExpanded = infoHolder.offsetHeight > 0;
+                infoHolder.style.setProperty('--top-offset', isExpanded ? `${toolbar.offsetHeight + 20}px` : '0px');
+            };
+
+            // Use ResizeObserver to efficiently react to changes in the info holder's size.
+            // This covers it appearing, disappearing, or its content changing height.
+            const observer = new ResizeObserver(updatePosition);
+            observer.observe(infoHolder);
+
+            // Run once at the start to set the initial position.
+            updatePosition();
         },
         
         // --- UI MANIPULATION & STATE UPDATES ---
