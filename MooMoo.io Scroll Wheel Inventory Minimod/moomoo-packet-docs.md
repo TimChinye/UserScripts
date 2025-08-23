@@ -58,7 +58,7 @@ Packets that describe the state of players and other living entities on the map.
 
 ### `P`
 -   **Name**: Player Death / Reset
--   **Description**: Sent when the client's player has died. This triggers a reset of health, inventory, and age.
+-   **Description**: Sent when the client's player has died. This suggests a reset of health, inventory, and age.
 -   **Payload**: `[]` (Empty)
 -   **Example**: `["P", []]`
 -   **Frequency**: Event-driven (on death).
@@ -262,3 +262,10 @@ Packets for managing teams and clans.
 -   **Name**: Projectile Distance?
 -   **Description**: Sent after `X` (Create Projectile). The second number might represent distance traveled or time until impact.
 -   **Payload**: `[unknown: number, value: number]`
+
+### `Z`
+-   **Name**: Game Elapsed?
+-   **Description**: Seemingly, a game elapsed clock - just constantly goes down, each second.
+-   **Payload**: `[timeElapsed: number]`
+-   **Example**: `["0", [-407063]]`
+-   **Frequency**: Moderate (every second).
