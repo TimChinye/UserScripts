@@ -2,15 +2,22 @@
 // @name         MooMoo.io Scroll Wheel Inventory Minimod
 // @namespace    https://greasyfork.org/users/137913
 // @author       TigerYT
- // @description  Adds Minecraft-style inventory selection using the scroll wheel.
+// @description  Adds Minecraft-style inventory selection using the scroll wheel.
 // @version      3.0.0
+// @grant        none
 // @match        *://moomoo.io/*
 // @match        *://dev.moomoo.io/*
 // @match        *://sandbox.moomoo.io/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=moomoo.io
 // @run-at       document-start
-// @grant        none
 // ==/UserScript==
+ 
+/*
+Version numbers: A.B.C
+A = Added a bunch of mods
+B = Added a single mod
+C = Added patches
+*/
 
 (function() {
     'use strict';
