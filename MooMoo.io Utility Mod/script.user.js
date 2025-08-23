@@ -4,7 +4,7 @@
 // @description  This mod adds a number of mini-mods to enhance your MooMoo.io experience whilst not being too unfair to non-script users.
 // @license      GNU GPLv3 with the condition: no auto-heal or instant kill features may be added to the licensed material.
 // @author       TigerYT
-// @version      0.5.7
+// @version      0.5.8
 // @grant        none
 // @match        *://moomoo.io/*
 // @match        *://dev.moomoo.io/*
@@ -29,13 +29,29 @@ C = Added patches
      * It respects the `DEBUG_MODE` flag in the main module's config.
      */
     const Logger = {
-        /** Logs a standard message. */
+        /**
+         * Logs a standard message.
+         * @param {string} message The message to log.
+         * @param {...any} args Additional arguments to pass to console.log.
+         */
         log: (message, ...args) => MooMooUtilityMod.config.DEBUG_MODE && console.log(`%c[Util-Mod] ${message}`, ...args),
-        /** Logs an informational message. */
+        /**
+         * Logs an informational message.
+         * @param {string} message The message to log.
+         * @param {...any} args Additional arguments to pass to console.info.
+         */
         info: (message, ...args) => MooMooUtilityMod.config.DEBUG_MODE && console.info(`%c[Util-Mod] ${message}`, ...args),
-        /** Logs a warning. */
+        /**
+         * Logs a warning.
+         * @param {string} message The message to log.
+         * @param {...any} args Additional arguments to pass to console.warn.
+         */
         warn: (message, ...args) => MooMooUtilityMod.config.DEBUG_MODE && console.warn(`[Util-Mod] ${message}`, ...args),
-        /** Logs an error. Always shown regardless of DEBUG_MODE. */
+        /**
+         * Logs an error. Always shown regardless of DEBUG_MODE.
+         * @param {string} message The message to log.
+         * @param {...any} args Additional arguments to pass to console.error.
+         */
         error: (message, ...args) => console.error(`[Util-Mod] ${message}`, ...args),
     };
 
@@ -316,6 +332,7 @@ C = Added patches
             /**
              * Processes the raw item data from `_rawItems` into the lookup maps for efficient access.
              * This function is called once during the script's initialization.
+             * @function
              */
             initialize() {
                 const C = this.constants;
@@ -758,12 +775,15 @@ C = Added patches
 
         // --- MINI-MOD PROPERTIES ---
 
+        /** @property {string} name - The display name of the minimod. */
         name: "Scroll Wheel Inventory",
+        /** @property {object} constants - Constants specific to this minimod. */
         constants: {
             HOTKEYS: {
                 USE_FOOD: 'Q',
             },
         },
+        /** @property {object} state - Dynamic state for this minimod. */
         state: {
             /** @property {number} selectedItemIndex - The current index within the list of *equippable* items. */
             selectedItemIndex: -1,
@@ -1006,6 +1026,11 @@ C = Added patches
             });
         },
 
+        /**
+         * Checks if a user input element (like chat or menus) is currently focused.
+         * @private
+         * @returns {boolean} True if an input is focused, false otherwise.
+         */
         _isInputFocused() {
             const C = this.core.data.constants;
             const isVisible = (id) => {
@@ -1024,7 +1049,9 @@ C = Added patches
 
         // --- MINI-MOD PROPERTIES ---
 
+        /** @property {string} name - The display name of the minimod. */
         name: "Wearables Toolbar",
+        /** @property {object} constants - Constants specific to this minimod. */
         constants: {
             HOTKEYS: {
                 TOGGLE_WEARABLES: 'P',
@@ -1064,9 +1091,13 @@ C = Added patches
                 DRAG_AND_DROP_VISIBILITY: 0,
             },
         },
+        /** @property {object} state - Dynamic state for this minimod. */
         state: {
+            /** @property {boolean} isVisible - Whether the toolbar UI is currently shown. */
             isVisible: true,
+            /** @property {Set<number>} pinnedWearables - A set of wearable IDs that the user has pinned to the toolbar. */
             pinnedWearables: new Set(),
+            /** @property {HTMLElement|null} draggedItem - The wearable button element currently being dragged. */
             draggedItem: null,
         },
 
@@ -1188,17 +1219,17 @@ C = Added patches
                     width: 40px;
                     height: 40px;
                     margin: 4px 0;
-                    border: 2px solid grey;
+                    border: 2px solid rgba(255, 255, 255, 0.25);
                     background-size: contain;
                     background-position: center;
                     background-repeat: no-repeat;
                     cursor: pointer;
-                    background-color: #4a4a4a;
+                    background-color: rgba(0, 0, 0, 0.125);
                     border-radius: 4px;
                     transition: all 0.2s ease;
 
                     &:hover {
-                        background-color: #6a6a6a;
+                        background-color: rgba(255, 255, 255, 0.125);
                         border-color: white;
                     }
 
@@ -1448,11 +1479,17 @@ C = Added patches
             });
         },
 
+        /**
+         * Checks if a wearable is currently pinned to the toolbar.
+         * @param {number} id The ID of the wearable to check.
+         * @returns {boolean} True if the wearable is pinned.
+         */
         isWearablePinned(id) {
             return this.state.pinnedWearables.has(id);
         },
 
         /**
+         * Toggles the pinned state of a wearable item.
          * @param {number} id - The ID of the wearable to pin/unpin.
          * @param {number} type - The type of the wearable (HAT/ACCESSORY).
          * @returns {boolean} - True if the item is now pinned, false otherwise.
