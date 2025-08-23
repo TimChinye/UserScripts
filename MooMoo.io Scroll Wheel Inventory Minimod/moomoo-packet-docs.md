@@ -78,7 +78,7 @@ Packets that describe the state of players and other living entities on the map.
 -   **Frequency**: Event-driven.
 
 #### `P`
--   **Name**: Kill Player
+-   **Name**: Client Player Death
 -   **Description**: Sent when the client's own player has died.
 -   **Payload**: `[]` (Empty)
 -   **Frequency**: Event-driven (on death).
@@ -103,7 +103,7 @@ Packets that describe the state of players and other living entities on the map.
 
 #### `N`
 -   **Name**: Update Player Value
--   **Description**: Updates a specific property on the client's player object (e.g., resources, kills).
+-   **Description**: Updates a specific property on the client's player object (e.g; resources, kills).
 -   **Payload**: `[propertyName: string, newValue: number, updateView: boolean]`
 -   **Frequency**: Event-driven.
 
@@ -131,7 +131,7 @@ Packets related to managing player inventory, resources, and the shop.
 
 #### `S`
 -   **Name**: Update Item Counts
--   **Description**: Updates the quantity of a stackable, placeable item group (e.g., walls, spikes).
+-   **Description**: Updates the quantity of a stackable, placeable item group (e.g; walls, spikes).
 -   **Payload**: `[itemGroupID: number, newCount: number]`
 -   **Frequency**: Event-driven.
 
@@ -161,7 +161,7 @@ Packets for creating, destroying, and interacting with map objects.
 
 #### `R`
 -   **Name**: Kill Objects
--   **Description**: Removes all placed objects belonging to a specific player SID (e.g., when they die).
+-   **Description**: Removes all placed objects belonging to a specific player SID (e.g; when they die).
 -   **Payload**: `[ownerSID: number]`
 -   **Frequency**: Event-driven.
 
@@ -189,7 +189,7 @@ Packets specifically for combat-related events.
 
 #### `X`
 -   **Name**: Add Projectile
--   **Description**: Sent when a new projectile (e.g., arrow) is created.
+-   **Description**: Sent when a new projectile (e.g; arrow) is created.
 -   **Payload**: `[x: number, y: number, dir: number, range: number, speed: number, index: number, layer: number, sid: number]`
 -   **Frequency**: Event-driven.
 

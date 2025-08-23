@@ -4,7 +4,7 @@
 // @description  This mod adds a number of mini-mods to enhance your MooMoo.io experience whilst not being too unfair to non-script users.
 // @license      GNU GPLv3 with the condition: no auto-heal or instant kill features may be added to the licensed material.
 // @author       TigerYT
-// @version      0.7.0
+// @version      0.7.1
 // @grant        none
 // @match        *://moomoo.io/*
 // @match        *://dev.moomoo.io/*
@@ -264,7 +264,7 @@ C = Added patches
                 'M': 'Shoot Turret',
                 'N': 'Update Player Value',
                 'O': 'Update Health',
-                'P': 'Kill Player',
+                'P': 'Client Player Death',
                 'Q': 'Kill Object',
                 'R': 'Kill Objects',
                 'S': 'Update Item Counts',
@@ -548,7 +548,7 @@ C = Added patches
                 });
 
                 switch (packetName) {
-                    case 'Player Death / Reset': {
+                    case 'Client Player Death': {
                         if (this.state.playerHasRespawned); // Do nothing
                         else this.state.playerHasRespawned = true
 
@@ -675,7 +675,7 @@ C = Added patches
                         scanObject(prop, depth + 1, onCodecFound);
 
                     } catch (e) {
-                        // Ignore errors from accessing certain properties (e.g., cross-origin iframes)
+                        // Ignore errors from accessing certain properties (e.g; cross-origin iframes)
                     }
                 }
             };
@@ -825,13 +825,13 @@ C = Added patches
          */
         onPacket(packetName, packetData) {
             switch (packetName) {
-                case 'Client Player Initialization': {
+                case 'Setup Game': {
                     // Stores the client's player ID upon initial connection.
                     this.core.state.playerId = packetData.playerID;
                     break;
                 }
 
-                case 'Other Player Spawn':{
+                case 'Add Player': {
                     // When the client player spawns, trigger the core's onGameReady to finalize setup.
                     if (this.core.state.playerId === packetData.id && packetData.isClientPlayer) {
                         this.core.onGameReady();
@@ -839,7 +839,7 @@ C = Added patches
                     break;
                 }
 
-                case 'Resource Update': {
+                case 'Update Player Value': {
                     // Updates player resource counts and refreshes equippable item states.
                     // If a non-gold resource decreases, assume item usage and try to revert to the last selected weapon.
                     const resourceType = packetData.resourceType;
@@ -854,7 +854,7 @@ C = Added patches
                     break;
                 }
 
-                case 'Item Count Update': {
+                case 'Update Item Counts': {
                     // Updates the count of placed items (e.g; walls, traps) and refreshes equippable states.
                     // This is crucial for enforcing placement limits.
                     const itemData = this.core.data._itemDataByServerId.get(packetData.serverItemID);
