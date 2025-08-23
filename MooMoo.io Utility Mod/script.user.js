@@ -4,7 +4,7 @@
 // @description  This mod adds a number of mini-mods to enhance your MooMoo.io experience whilst not being too unfair to non-script users.
 // @license      GNU GPLv3 with the condition: no auto-heal or instant kill features may be added to the licensed material.
 // @author       TigerYT
-// @version      0.5.2
+// @version      0.5.3
 // @grant        none
 // @match        *://moomoo.io/*
 // @match        *://dev.moomoo.io/*
@@ -100,6 +100,7 @@ C = Added patches
 
             /**
              * @property {object} constants - A collection of named constants to avoid "magic values" in the code.
+             * These are "universal" constants that multiple minimods may need access to.
              */
             constants: {
                 PACKET_TYPES: {
@@ -126,15 +127,6 @@ C = Added patches
                     ADD_ITEM: 0,
                     UPDATE_EQUIPPED: 1,
                 },
-                HOTKEYS: {
-                    TOGGLE_WEARABLES: 'P',
-                    USE_FOOD: 'Q',
-                },
-                TEXT: {
-                    PIN: 'Pin',
-                    UNPIN: 'Unpin',
-                    EQUIP_BUTTON_TEXT: 'equip',
-                },
                 DOM: {
                     // IDs
                     STORE_MENU: 'storeMenu',
@@ -143,11 +135,6 @@ C = Added patches
                     CHAT_HOLDER: 'chatHolder',
                     ALLIANCE_MENU: 'allianceMenu',
                     ACTION_BAR: 'actionBar',
-                    WEARABLES_TOOLBAR: 'wearablesToolbar',
-                    WEARABLES_HATS: 'wearables-hats',
-                    WEARABLES_ACCESSORIES: 'wearables-accessories',
-                    WEARABLES_GRID: 'wearables-grid',
-                    WEARABLE_BUTTON: 'wearable-btn',
                     GAME_CANVAS: 'gameCanvas',
                     GAME_UI: 'gameUI',
                     ENTER_GAME_BUTTON: 'enterGame',
@@ -157,16 +144,8 @@ C = Added patches
                     // Selectors / Patterns / Classes
                     ACTION_BAR_ITEM_REGEX: /^actionBarItem(\d+)$/,
                     ACTION_BAR_ITEM_CLASS: '.actionBarItem',
-                    WEARABLE_BUTTON_ID_PREFIX: 'wearable-btn-',
-                    JOIN_ALLIANCE_BUTTON_CLASS: '.joinAlBtn',
-                    PIN_BUTTON_CLASS: 'pinBtn',
-                    WEARABLE_SELECTED_CLASS: 'selected',
-                    WEARABLE_DRAGGING_CLASS: 'dragging',
                     STORE_MENU_COMPACT_CLASS: 'compact',
                     STORE_MENU_EXPANDED_CLASS: 'expanded',
-                    ENTER_GAME_BUSY_CLASS: 'busy',
-                    ENTER_GAME_DISABLED_CLASS: 'disabled',
-                    GRID_DRAGGING_OVER_CLASS: 'dragging-over',
                 },
                 CSS: {
                     DISPLAY_NONE: 'none',
@@ -176,7 +155,6 @@ C = Added patches
                     BORDER_NONE: 'none',
                     SELECTION_BORDER_STYLE: '2px solid white',
                     STORE_MENU_TRANSFORM: 'translateY(0px)',
-                    DRAGGING_OPACITY: '0.5',
                 },
                 GAME_STATE: {
                     INITIAL_SELECTED_ITEM_INDEX: 0,
@@ -185,19 +163,8 @@ C = Added patches
                     SCROLL_DOWN: 1,
                     SCROLL_UP: -1,
                 },
-                REGEX: {
-                    HAT_IMG: /hat_(\d+)\.png/,
-                    ACCESSORY_IMG: /access_(\d+)\.png/,
-                },
-                URLS: {
-                    BASE_IMG: 'https://moomoo.io/img',
-                    HAT_IMG_PATH: '/hats/hat_',
-                    ACCESSORY_IMG_PATH: '/accessories/access_',
-                    IMG_EXT: '.png',
-                },
                 TIMEOUTS: {
                     MANUAL_CODEC_SCAN: 5000,
-                    DRAG_AND_DROP_VISIBILITY: 0,
                 },
             },
 
@@ -478,6 +445,8 @@ C = Added patches
          *   once its display is 'block'. Rejects if the input is not an HTMLElement.
          */
         waitForVisible(element) {
+            if (!element) return Promise.reject();
+
             // Define the condition check in one place to avoid repetition.
             const isDisplayBlock = () => window.getComputedStyle(element).display !== 'none';
 
@@ -537,7 +506,7 @@ C = Added patches
                         mod.onPacket(packetName, packetData, args);
                     }
                 });
-                
+
                 switch (packetName) {
                     case 'Player Death / Reset': {
                         if (this.state.playerHasRespawned); // Do nothing
@@ -695,16 +664,6 @@ C = Added patches
          */
         initializeHooks() {
             const C = this.data.constants;
-            const style = document.createElement('style');
-            style.textContent = `
-                #${C.DOM.ENTER_GAME_BUTTON}:not(.${C.DOM.ENTER_GAME_DISABLED_CLASS}).${C.DOM.ENTER_GAME_BUSY_CLASS} {
-                    position: relative;
-                    pointer-events: none;
-                    color: #fff;
-                    background-color: #e56157;
-                }
-            `;
-            document.head.appendChild(style);
 
             // Hook 1: Find msgpack codecs
             let codecsFound = 0;
@@ -800,6 +759,11 @@ C = Added patches
         // --- MINI-MOD PROPERTIES ---
 
         name: "Scroll Wheel Inventory",
+        constants: {
+            HOTKEYS: {
+                USE_FOOD: 'Q',
+            },
+        },
         state: {
             /** @property {number} selectedItemIndex - The current index within the list of *equippable* items. */
             selectedItemIndex: -1,
@@ -807,7 +771,7 @@ C = Added patches
             lastSelectedWeaponIndex: -1,
         },
 
-        // --- Unknown Label ---
+        // --- MINI-MOD LIFECYCLE & HOOKS ---
 
         /**
          * Handles incoming game packets and updates the state of the Scroll Inventory Mini-mod.
@@ -821,17 +785,14 @@ C = Added patches
                 case 'Client Player Initialization': {
                     // Stores the client's player ID upon initial connection.
                     this.core.state.playerId = packetData.playerID;
-
                     break;
                 }
 
                 case 'Other Player Spawn':{
                     // When the client player spawns, trigger the core's onGameReady to finalize setup.
-
                     if (this.core.state.playerId === packetData.id && packetData.isClientPlayer) {
                         this.core.onGameReady();
                     }
-
                     break;
                 }
 
@@ -840,7 +801,6 @@ C = Added patches
                     // If a non-gold resource decreases, assume item usage and try to revert to the last selected weapon.
                     const resourceType = packetData.resourceType;
                     const oldAmount = this.core.state.playerResources[resourceType];
-
                     this.core.state.playerResources[resourceType] = packetData.newAmount;
 
                     if (resourceType !== 'gold' && packetData.newAmount < oldAmount) {
@@ -855,12 +815,10 @@ C = Added patches
                     // Updates the count of placed items (e.g; walls, traps) and refreshes equippable states.
                     // This is crucial for enforcing placement limits.
                     const itemData = this.core.data._itemDataByServerId.get(packetData.serverItemID);
-
                     if (itemData && itemData.limitGroup) {
                         this.core.state.playerPlacedItemCounts.set(itemData.limitGroup, packetData.newCount);
                         this.refreshEquippableState();
                     }
-
                     break;
                 }
             }
@@ -868,74 +826,27 @@ C = Added patches
 
         /**
          * Adds necessary event listeners to the document and action bar for inventory interaction.
-         * - 'wheel' event for scrolling through items.
-         * - 'keydown' event for hotkey selection.
-         * - 'click' event on the action bar for direct item selection.
          */
         addEventListeners() {
             const C = this.core.data.constants;
             document.addEventListener('wheel', this.handleInventoryScroll.bind(this), { passive: false });
             document.addEventListener('keydown', this.handleKeyPress.bind(this));
-
-            const actionBarElem = document.getElementById(C.DOM.ACTION_BAR);
-            actionBarElem.addEventListener('click', this.handleItemClick.bind(this));
+            document.getElementById(C.DOM.ACTION_BAR).addEventListener('click', this.handleItemClick.bind(this));
         },
 
         /**
-         * Called when the game is ready.
-         * Selects the initial primary weapon upon game readiness.
+         * Called when the game is ready. Selects the initial weapon and sets up UI observers.
          */
         onGameReady() {
             const C = this.core.data.constants;
 
-            // Wait for Game UI to load and then start getting initial player resources state
+            // Wait for Game UI to load before proceeding
             const gameUI = document.getElementById(C.DOM.GAME_UI);
             this.core.waitForVisible(gameUI).then(() => {
-                // Re-size the store menu
-                const storeMenu = document.getElementById(C.DOM.STORE_MENU);
-                storeMenu.style.transform = C.CSS.STORE_MENU_TRANSFORM;
+                // --- Set up observers for dynamic UI adjustments ---
+                this.setupStoreMenuObservers();
 
-                const upgradeHolder = document.getElementById(C.DOM.UPGRADE_HOLDER);
-                const upgradeCounter = document.getElementById(C.DOM.UPGRADE_COUNTER);
-
-                const initialCheck = () => {
-                    const upgradeHolderVisible = upgradeHolder.style.display === C.CSS.DISPLAY_BLOCK;
-                    const upgradeCounterVisible = upgradeCounter.style.display === C.CSS.DISPLAY_BLOCK;
-
-                    if (upgradeHolderVisible && upgradeCounterVisible) {
-                        storeMenu.classList.remove(C.DOM.STORE_MENU_COMPACT_CLASS);
-                        storeMenu.classList.add(C.DOM.STORE_MENU_EXPANDED_CLASS);
-                    } else {
-                        storeMenu.classList.remove(C.DOM.STORE_MENU_EXPANDED_CLASS);
-                        storeMenu.classList.add(C.DOM.STORE_MENU_COMPACT_CLASS);
-                    }
-                };
-
-                const upgradeObserver = new MutationObserver(initialCheck);
-                upgradeObserver.observe(upgradeHolder, { attributes: true, attributeFilter: ['style'] });
-                upgradeObserver.observe(upgradeCounter, { attributes: true, attributeFilter: ['style'] });
-                initialCheck();
-
-                const storeMenuObserver = new MutationObserver((mutationsList) => {
-                    for (const mutation of mutationsList) {
-                        if (storeMenu.style.display === C.CSS.DISPLAY_BLOCK && mutation.oldValue.includes(`display: ${C.CSS.DISPLAY_NONE}`)) {
-                            this.addPinButtons();
-                        }
-                    }
-                });
-
-                storeMenuObserver.observe(storeMenu, {
-                    attributes: true,
-                    attributeFilter: ['style'],
-                    attributeOldValue: true
-                });
-
-                const storeHolder = document.getElementById(C.DOM.STORE_HOLDER);
-
-                const storeHolderObserver = new MutationObserver(() => this.addPinButtons());
-                storeHolderObserver.observe(storeHolder, { childList: true });
-
-                // Scrape initial resources
+                // --- Scrape initial state from the DOM ---
                 const resElements = document.getElementById(C.DOM.RESOURCE_DISPLAY).children;
                 this.core.state.playerResources = {
                     food: parseInt(resElements[0].textContent) || 0,
@@ -944,168 +855,15 @@ C = Added patches
                     gold: parseInt(resElements[3].textContent) || 0,
                 };
 
-                // Select primary weapon on spawn
+                // --- Perform initial actions ---
                 this.selectItemByIndex(C.GAME_STATE.INITIAL_SELECTED_ITEM_INDEX);
             });
-        },
-
-        // --- Unknown Label ---
-
-        /**
-         * Adds "Pin" / "Unpin" buttons to owned wearable items in the store.
-         */
-        addPinButtons() {
-            const C = this.core.data.constants;
-            const storeHolder = document.getElementById(C.DOM.STORE_HOLDER);
-            const wearablesMod = this.core.miniMods.find(m => m.name === "Wearables Toolbar");
-
-            if (!storeHolder || !wearablesMod) return;
-
-            Array.from(storeHolder.children).forEach((storeItem) => {
-                const joinBtn = storeItem.querySelector(C.DOM.JOIN_ALLIANCE_BUTTON_CLASS);
-                const img = storeItem.querySelector('img');
-
-                if (storeItem.querySelector(`.${C.DOM.PIN_BUTTON_CLASS}`)) return;
-                if (!joinBtn || !img || !joinBtn.textContent.toLowerCase().includes(C.TEXT.EQUIP_BUTTON_TEXT)) return;
-
-                let id, type;
-                const src = img.src;
-                const hatMatch = src.match(C.REGEX.HAT_IMG);
-                const accMatch = src.match(C.REGEX.ACCESSORY_IMG);
-
-                if (hatMatch) {
-                    id = parseInt(hatMatch[1]);
-                    type = C.WEARABLE_TYPES.HAT;
-                } else if (accMatch) {
-                    id = parseInt(accMatch[1]);
-                    type = C.WEARABLE_TYPES.ACCESSORY;
-                } else {
-                    return; // Not a wearable item
-                }
-
-                const isPinned = wearablesMod.isWearablePinned(id);
-                const pinButton = document.createElement('div');
-                pinButton.className = `${C.DOM.JOIN_ALLIANCE_BUTTON_CLASS.substring(1)} ${C.DOM.PIN_BUTTON_CLASS}`;
-                pinButton.style.marginTop = '5px';
-                pinButton.textContent = isPinned ? C.TEXT.UNPIN : C.TEXT.PIN;
-
-                pinButton.addEventListener('click', () => {
-                    const isNowPinned = wearablesMod.togglePin(id, type);
-                    pinButton.textContent = isNowPinned ? C.TEXT.UNPIN : C.TEXT.PIN;
-                    wearablesMod.refreshToolbarVisibility();
-                });
-
-                joinBtn.insertAdjacentElement('afterend', pinButton);
-            });
-        },
-
-
-        /**
-         * The master function for refreshing the inventory selection state and UI.
-         * It is called by user scrolling and by network events (e.g; resource updates).
-         * @param {number} [scrollDirection=0] - The direction of the scroll. Use 1 for down, -1 for up. A value of 0 refreshes the UI without changing selection.
-         */
-        refreshEquippableState(scrollDirection = this.core.data.constants.GAME_STATE.NO_SCROLL) {
-            const C = this.core.data.constants;
-
-            // Get all items from the DOM
-            const actionBar = document.getElementById(C.DOM.ACTION_BAR);
-            if (!actionBar) return;
-
-            const equippableItems = Array.from(actionBar.children).filter(el => this.core.isEquippableItem(el));
-            if (equippableItems.length === 0) {
-                Logger.warn("No equippable items available.");
-
-                this.state.selectedItemIndex = -1; // Reset index
-                this.updateSelectionUI(null, []); // Clear the UI
-
-                return;
-            }
-
-            // Calculate the new index. This handles scrolling and corrects the index if the item list changes.
-            this.state.selectedItemIndex = (this.state.selectedItemIndex + scrollDirection + equippableItems.length) % equippableItems.length;
-
-            // Stores the last active weapon's index, defaulting to primary if a secondary isn't equippable.
-            if (equippableItems[1]) {
-                const secondEquippableItem = this.core.getItemFromElem(equippableItems[1]);
-                if (this.state.selectedItemIndex <= C.ITEM_TYPES.SECONDARY_WEAPON) {
-                    if (secondEquippableItem?.itemType > C.ITEM_TYPES.SECONDARY_WEAPON) {
-                        this.state.lastSelectedWeaponIndex = C.ITEM_TYPES.PRIMARY_WEAPON;
-                    } else {
-                        this.state.lastSelectedWeaponIndex = this.state.selectedItemIndex;
-                    }
-                }
-            }
-
-            // Get the selected item element
-            const selectedElement = equippableItems[this.state.selectedItemIndex];
-            if (!selectedElement) return;
-
-            // If we scrolled, send the equip packet. If it's just a refresh, we don't.
-            if (scrollDirection !== C.GAME_STATE.NO_SCROLL) {
-                const itemToEquip = this.core.getItemFromElem(selectedElement);
-
-                if (itemToEquip) {
-                    const isWeapon = itemToEquip.itemType <= C.ITEM_TYPES.SECONDARY_WEAPON;
-                    this.core.sendGamePacket(C.PACKET_TYPES.EQUIP_ITEM, [itemToEquip.id, isWeapon]);
-                }
-            }
-
-            // Always update the UI to reflect the current state
-            this.updateSelectionUI(selectedElement);
-        },
-
-        /**
-         * Updates the action bar UI to highlight the selected item and apply styles to others.
-         * @param {HTMLElement|null} selectedItem - The element to highlight as selected. Can be null to clear selection.
-         */
-        updateSelectionUI(selectedItem) {
-            const C = this.core.data.constants;
-            const actionBar = document.getElementById(C.DOM.ACTION_BAR);
-            if (!actionBar) return;
-
-            const allItems = Array.from(actionBar.children);
-            allItems.filter(item => item != selectedItem).forEach(item => {
-                item.style.border = C.CSS.BORDER_NONE;
-                item.style.filter = this.core.isEquippableItem(item) ? C.CSS.FILTER_Equippable : C.CSS.FILTER_Unequippable;
-            });
-
-            if (selectedItem) {
-                selectedItem.style.border = C.CSS.SELECTION_BORDER_STYLE;
-                selectedItem.style.filter = C.CSS.FILTER_Equippable;
-            }
-        },
-
-        /**
-         * Updates state when an item is selected by its index in the list of equippable items and updates the UI.
-         * This is used for direct selection via hotkeys and clicks.
-         * @param {number} newIndex - The index of the item to select in the list of currently equippable items.
-         */
-        selectItemByIndex(newIndex) {
-            const C = this.core.data.constants;
-            const actionBar = document.getElementById(C.DOM.ACTION_BAR);
-            if (!actionBar) return;
-
-            const equippableItems = Array.from(actionBar.children).filter(el => this.core.isEquippableItem(el));
-            if (newIndex < 0 || newIndex >= equippableItems.length) return;
-
-            this.state.selectedItemIndex = newIndex;
-            this.refreshEquippableState(C.GAME_STATE.NO_SCROLL);
-        },
-
-        _isInputFocused() {
-            const C = this.core.data.constants;
-            const isVisible = (id) => {
-                const elem = document.getElementById(id);
-                return elem && elem.style.display === C.CSS.DISPLAY_BLOCK;
-            };
-            return isVisible(C.DOM.CHAT_HOLDER) || isVisible(C.DOM.STORE_MENU) || isVisible(C.DOM.ALLIANCE_MENU);
         },
 
         // --- EVENT HANDLERS ---
 
         /**
-         * The main handler for the 'wheel' event on the document. Orchestrates the item selection process on scroll.
+         * The main handler for the 'wheel' event. Orchestrates item selection on scroll.
          * @param {WheelEvent} event - The DOM wheel event.
          */
         handleInventoryScroll(event) {
@@ -1136,8 +894,7 @@ C = Added patches
             if (availableItems.length === 0) return;
 
             const isNumericHotkey = (key) => key >= '1' && key <= '9';
-            const isFoodHotkey = (key) => key === C.HOTKEYS.USE_FOOD;
-
+            const isFoodHotkey = (key) => key === this.constants.HOTKEYS.USE_FOOD;
             const findFoodItem = (items) => items.find(el => this.core.getItemFromElem(el)?.itemType === C.ITEM_TYPES.FOOD);
 
             let targetElement = null;
@@ -1170,6 +927,179 @@ C = Added patches
                 if (newIndex !== -1) this.selectItemByIndex(newIndex);
             }
         },
+
+        // --- CORE LOGIC & UI MANIPULATION ---
+
+        /**
+         * The master function for refreshing the inventory selection state and UI.
+         * @param {number} [scrollDirection=0] - The direction of scroll. 1 for down, -1 for up. 0 refreshes UI without changing selection.
+         */
+        refreshEquippableState(scrollDirection = this.core.data.constants.GAME_STATE.NO_SCROLL) {
+            const C = this.core.data.constants;
+            const actionBar = document.getElementById(C.DOM.ACTION_BAR);
+            if (!actionBar) return;
+
+            const equippableItems = Array.from(actionBar.children).filter(el => this.core.isEquippableItem(el));
+            if (equippableItems.length === 0) {
+                Logger.warn("No equippable items available.");
+                this.state.selectedItemIndex = -1;
+                this.updateSelectionUI(null);
+                return;
+            }
+
+            // Calculate new index, handling scrolling and list changes.
+            this.state.selectedItemIndex = (this.state.selectedItemIndex + scrollDirection + equippableItems.length) % equippableItems.length;
+
+            // Store the last active weapon's index.
+            if (equippableItems[1]) {
+                const secondEquippableItem = this.core.getItemFromElem(equippableItems[1]);
+                if (this.state.selectedItemIndex <= C.ITEM_TYPES.SECONDARY_WEAPON) {
+                    this.state.lastSelectedWeaponIndex = secondEquippableItem?.itemType > C.ITEM_TYPES.SECONDARY_WEAPON
+                        ? C.ITEM_TYPES.PRIMARY_WEAPON
+                        : this.state.selectedItemIndex;
+                }
+            }
+
+            const selectedElement = equippableItems[this.state.selectedItemIndex];
+            if (!selectedElement) return;
+
+            // If we scrolled, send the equip packet.
+            if (scrollDirection !== C.GAME_STATE.NO_SCROLL) {
+                const itemToEquip = this.core.getItemFromElem(selectedElement);
+                if (itemToEquip) {
+                    const isWeapon = itemToEquip.itemType <= C.ITEM_TYPES.SECONDARY_WEAPON;
+                    this.core.sendGamePacket(C.PACKET_TYPES.EQUIP_ITEM, [itemToEquip.id, isWeapon]);
+                }
+            }
+
+            this.updateSelectionUI(selectedElement);
+        },
+
+        /**
+         * Updates state when an item is selected by its index in the list of equippable items.
+         * @param {number} newIndex - The index of the item to select in the list of currently equippable items.
+         */
+        selectItemByIndex(newIndex) {
+            const C = this.core.data.constants;
+            const actionBar = document.getElementById(C.DOM.ACTION_BAR);
+            if (!actionBar) return;
+
+            const equippableItems = Array.from(actionBar.children).filter(el => this.core.isEquippableItem(el));
+            if (newIndex < 0 || newIndex >= equippableItems.length) return;
+
+            this.state.selectedItemIndex = newIndex;
+            this.refreshEquippableState(C.GAME_STATE.NO_SCROLL);
+        },
+
+        /**
+         * Adds "Pin" / "Unpin" buttons to owned wearable items in the store.
+         */
+        addPinButtons() {
+            const C = this.core.data.constants;
+            const wearablesMod = this.core.miniMods.find(m => m.name === "Wearables Toolbar");
+            if (!wearablesMod) return;
+
+            const WC = wearablesMod.constants; // Wearables Constants
+            const storeHolder = document.getElementById(C.DOM.STORE_HOLDER);
+
+            Array.from(storeHolder.children).forEach((storeItem) => {
+                const joinBtn = storeItem.querySelector(WC.DOM.JOIN_ALLIANCE_BUTTON_CLASS);
+                const img = storeItem.querySelector('img');
+
+                if (storeItem.querySelector(`.${WC.DOM.PIN_BUTTON_CLASS}`)) return;
+                if (!joinBtn || !img || !joinBtn.textContent.toLowerCase().includes(WC.TEXT.EQUIP_BUTTON_TEXT)) return;
+
+                let id, type;
+                const hatMatch = img.src.match(WC.REGEX.HAT_IMG);
+                const accMatch = img.src.match(WC.REGEX.ACCESSORY_IMG);
+
+                if (hatMatch) {
+                    id = parseInt(hatMatch[1]);
+                    type = C.WEARABLE_TYPES.HAT;
+                } else if (accMatch) {
+                    id = parseInt(accMatch[1]);
+                    type = C.WEARABLE_TYPES.ACCESSORY;
+                } else {
+                    return; // Not a wearable item
+                }
+
+                const isPinned = wearablesMod.isWearablePinned(id);
+                const pinButton = document.createElement('div');
+                pinButton.className = `${WC.DOM.JOIN_ALLIANCE_BUTTON_CLASS.substring(1)} ${WC.DOM.PIN_BUTTON_CLASS}`;
+                pinButton.style.marginTop = '5px';
+                pinButton.textContent = isPinned ? WC.TEXT.UNPIN : WC.TEXT.PIN;
+
+                pinButton.addEventListener('click', () => {
+                    const isNowPinned = wearablesMod.togglePin(id, type);
+                    pinButton.textContent = isNowPinned ? WC.TEXT.UNPIN : WC.TEXT.PIN;
+                    wearablesMod.refreshToolbarVisibility();
+                });
+
+                joinBtn.insertAdjacentElement('afterend', pinButton);
+            });
+        },
+
+        // --- UI & HELPER FUNCTIONS ---
+
+        /**
+         * Updates the action bar UI to highlight the selected item and apply styles to others.
+         * @param {HTMLElement|null} selectedItem - The element to highlight as selected.
+         */
+        updateSelectionUI(selectedItem) {
+            const C = this.core.data.constants;
+            const actionBar = document.getElementById(C.DOM.ACTION_BAR);
+            if (!actionBar) return;
+
+            const allItems = Array.from(actionBar.children);
+            allItems.forEach(item => {
+                item.style.border = item === selectedItem ? C.CSS.SELECTION_BORDER_STYLE : C.CSS.BORDER_NONE;
+                item.style.filter = this.core.isEquippableItem(item) ? C.CSS.FILTER_Equippable : C.CSS.FILTER_Unequippable;
+            });
+        },
+        
+        /** Sets up observers to dynamically resize the store menu and add pin buttons when it opens. */
+        setupStoreMenuObservers() {
+            const C = this.core.data.constants;
+            const storeMenu = document.getElementById(C.DOM.STORE_MENU);
+            storeMenu.style.transform = C.CSS.STORE_MENU_TRANSFORM;
+
+            const upgradeHolder = document.getElementById(C.DOM.UPGRADE_HOLDER);
+            const upgradeCounter = document.getElementById(C.DOM.UPGRADE_COUNTER);
+
+            const initialCheck = () => {
+                const upgradeHolderVisible = upgradeHolder.style.display === C.CSS.DISPLAY_BLOCK;
+                const upgradeCounterVisible = upgradeCounter.style.display === C.CSS.DISPLAY_BLOCK;
+                const isExpanded = upgradeHolderVisible && upgradeCounterVisible;
+                storeMenu.classList.toggle(C.DOM.STORE_MENU_EXPANDED_CLASS, isExpanded);
+                storeMenu.classList.toggle(C.DOM.STORE_MENU_COMPACT_CLASS, !isExpanded);
+            };
+
+            const upgradeObserver = new MutationObserver(initialCheck);
+            upgradeObserver.observe(upgradeHolder, { attributes: true, attributeFilter: ['style'] });
+            upgradeObserver.observe(upgradeCounter, { attributes: true, attributeFilter: ['style'] });
+            initialCheck();
+
+            const storeMenuObserver = new MutationObserver((mutationsList) => {
+                for (const mutation of mutationsList) {
+                    if (storeMenu.style.display === C.CSS.DISPLAY_BLOCK && mutation.oldValue.includes(`display: ${C.CSS.DISPLAY_NONE}`)) {
+                        this.addPinButtons();
+                    }
+                }
+            });
+            storeMenuObserver.observe(storeMenu, { attributes: true, attributeFilter: ['style'], attributeOldValue: true });
+
+            const storeHolderObserver = new MutationObserver(() => this.addPinButtons());
+            storeHolderObserver.observe(document.getElementById(C.DOM.STORE_HOLDER), { childList: true });
+        },
+
+        _isInputFocused() {
+            const C = this.core.data.constants;
+            const isVisible = (id) => {
+                const elem = document.getElementById(id);
+                return elem && elem.style.display === C.CSS.DISPLAY_BLOCK;
+            };
+            return isVisible(C.DOM.CHAT_HOLDER) || isVisible(C.DOM.STORE_MENU) || isVisible(C.DOM.ALLIANCE_MENU);
+        },
     };
 
     /**
@@ -1178,20 +1108,57 @@ C = Added patches
      */
     const WearablesToolbarMiniMod = {
 
-        // --- Unknown Label ---
+        // --- MINI-MOD PROPERTIES ---
 
         name: "Wearables Toolbar",
+        constants: {
+            HOTKEYS: {
+                TOGGLE_WEARABLES: 'P',
+            },
+            TEXT: {
+                PIN: 'Pin',
+                UNPIN: 'Unpin',
+                EQUIP_BUTTON_TEXT: 'equip',
+            },
+            DOM: {
+                WEARABLES_TOOLBAR: 'wearablesToolbar',
+                WEARABLES_HATS: 'wearablesHats',
+                WEARABLES_ACCESSORIES: 'wearablesAccessories',
+                WEARABLES_GRID_CLASS: 'wearablesGrid',
+                WEARABLE_BUTTON_CLASS: 'wearable-btn',
+                WEARABLE_BUTTON_ID_PREFIX: 'wearable-btn-',
+                JOIN_ALLIANCE_BUTTON_CLASS: '.joinAlBtn',
+                PIN_BUTTON_CLASS: 'pinBtn',
+                WEARABLE_SELECTED_CLASS: 'selected',
+                WEARABLE_DRAGGING_CLASS: 'dragging',
+            },
+            CSS: {
+                DRAGGING_OPACITY: '0.5',
+            },
+            REGEX: {
+                HAT_IMG: /hat_(\d+)\.png/,
+                ACCESSORY_IMG: /access_(\d+)\.png/,
+            },
+            URLS: {
+                BASE_IMG: 'https://moomoo.io/img',
+                HAT_IMG_PATH: '/hats/hat_',
+                ACCESSORY_IMG_PATH: '/accessories/access_',
+                IMG_EXT: '.png',
+            },
+            TIMEOUTS: {
+                DRAG_AND_DROP_VISIBILITY: 0,
+            },
+        },
         state: {
             isVisible: true,
             pinnedWearables: new Set(),
             draggedItem: null,
         },
 
-        // --- Unknown Label ---
+        // --- MINI-MOD LIFECYCLE & HOOKS ---
 
         /**
          * Handles incoming game packets related to the Store / Shop and updates the Wearables Toolbar UI.
-         *
          * @param {string} packetName - The human-readable name of the incoming packet.
          * @param {object} packetData - The parsed data object from the incoming packet.
          */
@@ -1208,31 +1175,39 @@ C = Added patches
         },
 
         /**
-         * Called when the game is ready. Injects the necessary CSS and creates the UI for the wearables toolbar.
+         * Called when the game is ready. Injects the CSS and creates the UI for the wearables toolbar.
          */
         onGameReady() {
-            const C = this.core.data.constants;
-            
-            if (!this.core.state.playerHasRespawned && !document.getElementById(C.DOM.WEARABLES_TOOLBAR)) {
-                this.injectCSS();
-                this.createUI();
+            if (!this.core.state.playerHasRespawned && !document.getElementById(this.constants.DOM.WEARABLES_TOOLBAR)) {
+                const C = this.core.data.constants;
+
+                // Wait for Game UI to load before proceeding
+                const gameUI = document.getElementById(C.DOM.GAME_UI);
+                this.core.waitForVisible(gameUI).then(() => {
+                    this.injectCSS();
+                    this.createUI();
+                });
             }
         },
 
+        // --- INITIAL UI SETUP ---
+
         /**
          * Creates the HTML structure for the wearables toolbar and appends it to the document body.
-         * Also sets up a keydown listener for toggling the toolbar visibility.
          */
         createUI() {
-            const C = this.core.data.constants;
+            const C = this.constants;
+            const CoreC = this.core.data.constants;
 
             const container = document.createElement('div');
             container.id = C.DOM.WEARABLES_TOOLBAR;
             container.innerHTML = `
                 <h1>Wearables Toolbar <span>(Press '${C.HOTKEYS.TOGGLE_WEARABLES}' to toggle)</span></h1>
-                <div id="${C.DOM.WEARABLES_HATS}" class="${C.DOM.WEARABLES_GRID}"></div>
-                <div id="${C.DOM.WEARABLES_ACCESSORIES}" class="${C.DOM.WEARABLES_GRID}"></div>
+                <div id="${C.DOM.WEARABLES_HATS}" class="${C.DOM.WEARABLES_GRID_CLASS}"></div>
+                <div id="${C.DOM.WEARABLES_ACCESSORIES}" class="${C.DOM.WEARABLES_GRID_CLASS}"></div>
             `;
+            
+            document.getElementById(CoreC.DOM.GAME_UI).prepend(container);
 
             const hatsGrid = container.querySelector(`#${C.DOM.WEARABLES_HATS}`);
             const accessoriesGrid = container.querySelector(`#${C.DOM.WEARABLES_ACCESSORIES}`);
@@ -1240,35 +1215,34 @@ C = Added patches
             hatsGrid.addEventListener('dragover', this.handleDragOver.bind(this));
             accessoriesGrid.addEventListener('dragover', this.handleDragOver.bind(this));
 
-            document.body.appendChild(container);
-
             document.addEventListener('keydown', (e) => {
-                const visibleInputs = [C.DOM.CHAT_HOLDER, C.DOM.ALLIANCE_MENU, C.DOM.STORE_MENU];
-                const isInputFocused = visibleInputs.some(id => document.getElementById(id)?.style.display === C.CSS.DISPLAY_BLOCK);
+                const visibleInputs = [CoreC.DOM.CHAT_HOLDER, CoreC.DOM.ALLIANCE_MENU, CoreC.DOM.STORE_MENU];
+                const isInputFocused = visibleInputs.some(id => document.getElementById(id)?.style.display === CoreC.CSS.DISPLAY_BLOCK);
                 if (isInputFocused) return;
 
                 if (e.key.toUpperCase() === C.HOTKEYS.TOGGLE_WEARABLES) {
                     this.state.isVisible = !this.state.isVisible;
-                    container.style.display = this.state.isVisible ? C.CSS.DISPLAY_BLOCK : C.CSS.DISPLAY_NONE;
+                    container.style.display = this.state.isVisible ? CoreC.CSS.DISPLAY_BLOCK : CoreC.CSS.DISPLAY_NONE;
                 }
             });
         },
 
         /**
-         * Injects the CSS rules required for styling the wearables toolbar and its buttons into the document head.
+         * Injects the CSS rules required for styling the wearables toolbar and its buttons.
          */
         injectCSS() {
-            const C = this.core.data.constants;
+            const C = this.constants;
+            const CoreC = this.core.data.constants;
             const style = document.createElement('style');
             style.textContent = `
-                #${C.DOM.STORE_HOLDER} {
+                #${CoreC.DOM.STORE_HOLDER} {
                     height: 100%;
                 }
-                #${C.DOM.STORE_MENU}.${C.DOM.STORE_MENU_COMPACT_CLASS} {
+                #${CoreC.DOM.STORE_MENU}.${CoreC.DOM.STORE_MENU_COMPACT_CLASS} {
                     top: 20px;
                     height: calc(100% - 240px);
                 }
-                #${C.DOM.STORE_MENU}.${C.DOM.STORE_MENU_EXPANDED_CLASS} {
+                #${CoreC.DOM.STORE_MENU}.${CoreC.DOM.STORE_MENU_EXPANDED_CLASS} {
                     top: 140px;
                     height: calc(100% - 360px);
                 }
@@ -1302,14 +1276,14 @@ C = Added patches
                         }
                     }
                 }
-                .${C.DOM.WEARABLES_GRID} {
+                .${C.DOM.WEARABLES_GRID_CLASS} {
                     display: flex;
                     flex-wrap: wrap;
                     gap: 5px;
                     justify-content: flex-start;
                     margin-top: 5px;
                 }
-                .${C.DOM.WEARABLE_BUTTON} {
+                .${C.DOM.WEARABLE_BUTTON_CLASS} {
                     width: 40px;
                     height: 40px;
                     border: 2px solid grey;
@@ -1330,14 +1304,99 @@ C = Added patches
                         box-shadow: 0 0 8px lightgreen;
                     }
                 }
-                .${C.DOM.WEARABLE_BUTTON}.${C.DOM.WEARABLE_DRAGGING_CLASS} {
+                .${C.DOM.WEARABLE_BUTTON_CLASS}.${C.DOM.WEARABLE_DRAGGING_CLASS} {
                     opacity: ${C.CSS.DRAGGING_OPACITY};
                 }
             `;
-            document.head.appendChild(style);
+            document.head.append(style);
+        },
+        
+        // --- UI MANIPULATION & STATE UPDATES ---
+
+        /**
+         * Adds a new button for a wearable item to the appropriate grid (hats or accessories) in the toolbar.
+         * @param {number} id - The server-side ID of the wearable item.
+         * @param {number} type - The type of wearable (HAT or ACCESSORY).
+         */
+        addWearableButton(id, type) {
+            const C = this.constants;
+            const CoreC = this.core.data.constants;
+            const containerId = type === CoreC.WEARABLE_TYPES.HAT ? C.DOM.WEARABLES_HATS : C.DOM.WEARABLES_ACCESSORIES;
+            const container = document.getElementById(containerId);
+            if (!container) return;
+
+            const buttonId = `${C.DOM.WEARABLE_BUTTON_ID_PREFIX}${type}-${id}`;
+            if (document.getElementById(buttonId)) return;
+
+            const btn = document.createElement('div');
+            btn.id = buttonId;
+            btn.className = C.DOM.WEARABLE_BUTTON_CLASS;
+            btn.draggable = true;
+            btn.dataset.wearableId = id;
+
+            const imagePath = type === CoreC.WEARABLE_TYPES.HAT ? C.URLS.HAT_IMG_PATH : C.URLS.ACCESSORY_IMG_PATH;
+            btn.style.backgroundImage = `url(${C.URLS.BASE_IMG}${imagePath}${id}${C.URLS.IMG_EXT})`;
+            btn.title = `Item ID: ${id}`;
+
+            btn.addEventListener('dragstart', () => {
+                this.state.draggedItem = btn;
+                setTimeout(() => btn.classList.add(C.DOM.WEARABLE_DRAGGING_CLASS), C.TIMEOUTS.DRAG_AND_DROP_VISIBILITY);
+            });
+
+            btn.addEventListener('dragend', () => {
+                setTimeout(() => {
+                    if (this.state.draggedItem) this.state.draggedItem.classList.remove(C.DOM.WEARABLE_DRAGGING_CLASS);
+                    this.state.draggedItem = null;
+                }, C.TIMEOUTS.DRAG_AND_DROP_VISIBILITY);
+            });
+
+            btn.addEventListener('click', () => {
+                const isCurrentlySelected = btn.classList.contains(C.DOM.WEARABLE_SELECTED_CLASS);
+                const newItemId = isCurrentlySelected ? 0 : id;
+                this.core.sendGamePacket(CoreC.PACKET_TYPES.EQUIP_WEARABLE, [0, newItemId, type]);
+            });
+
+            container.append(btn);
+            this.refreshToolbarVisibility();
         },
 
-        // --- Pinning Logic ---
+        /**
+         * Updates the visual state of wearable buttons to reflect which item is currently equipped.
+         * @param {number} id - The server-side ID of the newly equipped wearable. 0 means unequip.
+         * @param {number} type - The type of wearable (HAT or ACCESSORY).
+         */
+        updateEquippedWearable(id, type) {
+            const C = this.constants;
+            const CoreC = this.core.data.constants;
+            const containerId = type === CoreC.WEARABLE_TYPES.HAT ? C.DOM.WEARABLES_HATS : C.DOM.WEARABLES_ACCESSORIES;
+            const container = document.getElementById(containerId);
+            if (!container) return;
+
+            const currentSelected = container.querySelector(`.${C.DOM.WEARABLE_SELECTED_CLASS}`);
+            if (currentSelected) currentSelected.classList.remove(C.DOM.WEARABLE_SELECTED_CLASS);
+
+            if (id > 0) {
+                const buttonId = `${C.DOM.WEARABLE_BUTTON_ID_PREFIX}${type}-${id}`;
+                const newSelectedBtn = document.getElementById(buttonId);
+                if (newSelectedBtn) newSelectedBtn.classList.add(C.DOM.WEARABLE_SELECTED_CLASS);
+            }
+        },
+
+        /** Hides/shows wearable buttons based on whether they are pinned. */
+        refreshToolbarVisibility() {
+            const C = this.constants;
+            const CoreC = this.core.data.constants;
+            const allButtons = document.querySelectorAll(`.${C.DOM.WEARABLE_BUTTON_CLASS}`);
+
+            allButtons.forEach(btn => {
+                const buttonId = parseInt(btn.dataset.wearableId);
+                if (!isNaN(buttonId)) {
+                    btn.style.display = this.state.pinnedWearables.has(buttonId) ? CoreC.CSS.DISPLAY_BLOCK : CoreC.CSS.DISPLAY_NONE;
+                }
+            });
+        },
+        
+        // --- PINNING LOGIC ---
 
         isWearablePinned(id) {
             return this.state.pinnedWearables.has(id);
@@ -1360,25 +1419,10 @@ C = Added patches
             }
         },
 
-        refreshToolbarVisibility() {
-            const C = this.core.data.constants;
-            const pinned = this.state.pinnedWearables;
-            const allButtons = document.querySelectorAll(`.${C.DOM.WEARABLE_BUTTON}`);
-
-            allButtons.forEach(btn => {
-                const buttonId = parseInt(btn.dataset.wearableId);
-                if (!isNaN(buttonId)) {
-                    btn.style.display = pinned.has(buttonId) ? C.CSS.DISPLAY_BLOCK : C.CSS.DISPLAY_NONE;
-                }
-            });
-        },
-
-        // --- Drag & Drop Logic ---
+        // --- EVENT HANDLERS (DRAG & DROP) ---
 
         /**
-         * Handles the dragover event for the wearables grid. It determines where the
-         * dragged item should be placed and moves it there, allowing for live reordering.
-         * This includes an optimization to prevent DOM updates if the position hasn't changed, fixing jitter.
+         * Handles the dragover event for the wearables grid to allow for live reordering.
          * @param {DragEvent} e - The drag event.
          */
         handleDragOver(e) {
@@ -1390,38 +1434,28 @@ C = Added patches
             // Determine where the item SHOULD be placed.
             const afterElement = this._getDragAfterElement(grid, e.clientX, e.clientY);
             
-            // OPTIMIZATION: If the dragged item is already in the correct position,
-            // do nothing. This prevents constant, unnecessary DOM manipulation that causes flickering.
-            if (currentlyDragged.nextSibling === afterElement) {
-                return;
-            }
+            // Optimization: Prevent DOM updates if position hasn't changed to avoid jitter.
+            if (currentlyDragged.nextSibling === afterElement) return;
 
-            // If the position needs to be updated, perform the insertion.
-            // The browser's `insertBefore` handles appending to the end if `afterElement` is null.
             grid.insertBefore(currentlyDragged, afterElement);
         },
 
+        // --- HELPER FUNCTIONS ---
+
         /**
-         * Finds the sibling element that should come after the dragged item.
-         * This function works for wrapped grids by prioritizing vertical position, then horizontal.
-         * This creates an intuitive reordering behavior and prevents the jitter seen in simpler, 1D implementations.
+         * Finds the sibling element that should come after the dragged item in a grid layout.
          * @param {HTMLElement} container - The grid container.
          * @param {number} x - The cursor's horizontal position.
          * @param {number} y - The cursor's vertical position.
          * @returns {HTMLElement|null} The sibling to insert before, or null to append at the end.
          */
         _getDragAfterElement(container, x, y) {
-            const C = this.core.data.constants;
-            const selector = `.${C.DOM.WEARABLE_BUTTON}:not(.${C.DOM.WEARABLE_DRAGGING_CLASS})`;
+            const C = this.constants;
+            const selector = `.${C.DOM.WEARABLE_BUTTON_CLASS}:not(.${C.DOM.WEARABLE_DRAGGING_CLASS})`;
             const draggableSiblings = [...container.querySelectorAll(selector)];
 
             for (const sibling of draggableSiblings) {
                 const box = sibling.getBoundingClientRect();
-                
-                // Determine if the cursor is "before" the current sibling in the flow.
-                // We check if the cursor is above the vertical midpoint of the sibling.
-                // OR, if it's on the same vertical level, we check if it's to the left
-                // of the horizontal midpoint.
                 const isVerticallyBefore = y < box.top + box.height / 2;
                 const isInRow = y >= box.top && y <= box.bottom;
                 const isHorizontallyBefore = x < box.left + box.width / 2;
@@ -1431,87 +1465,7 @@ C = Added patches
                 }
             }
             
-            // If the loop completes, the cursor is "after" all other elements.
-            return null;
-        },
-
-        // --- Unknown Label ---
-
-        /**
-         * Adds a new button for a wearable item to the appropriate grid (hats or accessories) in the toolbar.
-         * If the button already exists, it does nothing.
-         * Sets up a click listener on the button to send an equip/unequip packet to the server.
-         *
-         * @param {number} id - The server-side ID of the wearable item.
-         * @param {number} type - The type of wearable (e.g; `C.WEARABLE_TYPES.HAT` or `C.WEARABLE_TYPES.ACCESSORY`).
-         */
-        addWearableButton(id, type) {
-            const C = this.core.data.constants;
-            const containerId = type === C.WEARABLE_TYPES.HAT ? C.DOM.WEARABLES_HATS : C.DOM.WEARABLES_ACCESSORIES;
-            const container = document.getElementById(containerId);
-            if (!container) return;
-
-            const buttonId = `${C.DOM.WEARABLE_BUTTON_ID_PREFIX}${type}-${id}`;
-            if (document.getElementById(buttonId)) return;
-
-            const btn = document.createElement('div');
-            btn.id = buttonId;
-            btn.className = C.DOM.WEARABLE_BUTTON;
-            btn.draggable = true;
-            btn.dataset.wearableId = id;
-
-            const imagePath = type === C.WEARABLE_TYPES.HAT ? C.URLS.HAT_IMG_PATH : C.URLS.ACCESSORY_IMG_PATH;
-            const imageURL = `${C.URLS.BASE_IMG}${imagePath}${id}${C.URLS.IMG_EXT}`;
-            btn.style.backgroundImage = `url(${imageURL})`;
-            btn.title = `Item ID: ${id}`;
-
-            btn.addEventListener('dragstart', () => {
-                this.state.draggedItem = btn;
-                setTimeout(() => {
-                    btn.classList.add(C.DOM.WEARABLE_DRAGGING_CLASS);
-                }, C.TIMEOUTS.DRAG_AND_DROP_VISIBILITY);
-            });
-
-            btn.addEventListener('dragend', () => {
-                setTimeout(() => {
-                    if (this.state.draggedItem) {
-                        this.state.draggedItem.classList.remove(C.DOM.WEARABLE_DRAGGING_CLASS);
-                    }
-                    this.state.draggedItem = null;
-                }, C.TIMEOUTS.DRAG_AND_DROP_VISIBILITY);
-            });
-
-            btn.addEventListener('click', () => {
-                const isCurrentlySelected = btn.classList.contains(C.DOM.WEARABLE_SELECTED_CLASS);
-                const newItemId = isCurrentlySelected ? 0 : id;
-                this.core.sendGamePacket(C.PACKET_TYPES.EQUIP_WEARABLE, [0, newItemId, type]);
-            });
-
-            container.appendChild(btn);
-            this.refreshToolbarVisibility();
-        },
-
-        /**
-         * Updates the visual state of wearable buttons in the toolbar to reflect which item is currently equipped.
-         * It removes the 'selected' class from any previously selected item of the same type and applies it to the new one.
-         *
-         * @param {number} id - The server-side ID of the newly equipped wearable item. A value of 0 means unequip.
-         * @param {number} type - The type of wearable (e.g; `C.WEARABLE_TYPES.HAT` or `C.WEARABLE_TYPES.ACCESSORY`).
-         */
-        updateEquippedWearable(id, type) {
-            const C = this.core.data.constants;
-            const containerId = type === C.WEARABLE_TYPES.HAT ? C.DOM.WEARABLES_HATS : C.DOM.WEARABLES_ACCESSORIES;
-            const container = document.getElementById(containerId);
-            if (!container) return;
-
-            const currentSelected = container.querySelector(`.${C.DOM.WEARABLE_SELECTED_CLASS}`);
-            if (currentSelected) currentSelected.classList.remove(C.DOM.WEARABLE_SELECTED_CLASS);
-
-            if (id > 0) {
-                const buttonId = `${C.DOM.WEARABLE_BUTTON_ID_PREFIX}${type}-${id}`;
-                const newSelectedBtn = document.getElementById(buttonId);
-                if (newSelectedBtn) newSelectedBtn.classList.add(C.DOM.WEARABLE_SELECTED_CLASS);
-            }
+            return null; // If after all other elements
         },
     };
 
