@@ -4,7 +4,7 @@
 // @description  This mod adds a number of mini-mods to enhance your MooMoo.io experience whilst not being too unfair to non-script users.
 // @license      GNU GPLv3 with the condition: no auto-heal or instant kill features may be added to the licensed material.
 // @author       TigerYT
-// @version      0.7.2
+// @version      0.7.3
 // @grant        none
 // @match        *://moomoo.io/*
 // @match        *://dev.moomoo.io/*
@@ -804,14 +804,19 @@ C = Added patches
 
         // --- MINI-MOD PROPERTIES ---
 
+        /** @property {object|null} core - A reference to the core module object, set upon registration. */
+        core: null,
+
         /** @property {string} name - The display name of the minimod. */
         name: "Scroll Wheel Inventory",
+
         /** @property {object} constants - Constants specific to this minimod. */
         constants: {
             HOTKEYS: {
                 USE_FOOD: 'Q',
             },
         },
+
         /** @property {object} state - Dynamic state for this minimod. */
         state: {
             /** @property {number} selectedItemIndex - The current index within the list of *equippable* items. */
@@ -1078,8 +1083,12 @@ C = Added patches
 
         // --- MINI-MOD PROPERTIES ---
 
+        /** @property {object|null} core - A reference to the core module object, set upon registration. */
+        core: null,
+
         /** @property {string} name - The display name of the minimod. */
         name: "Wearables Toolbar",
+
         /** @property {object} constants - Constants specific to this minimod. */
         constants: {
             HOTKEYS: {
@@ -1120,6 +1129,7 @@ C = Added patches
                 DRAG_AND_DROP_VISIBILITY: 0,
             },
         },
+
         /** @property {object} state - Dynamic state for this minimod. */
         state: {
             /** @property {boolean} isVisible - Whether the toolbar UI is currently shown. */
@@ -1594,9 +1604,15 @@ C = Added patches
         
         // --- MINI-MOD PROPERTIES ---
 
-        name: "Typing Indicator",
-        core: null, // This will be set by the core script when registered
+        /** @property {object|null} core - A reference to the core module object, set upon registration. */
+        core: null,
 
+        /** @property {string} name - The display name of the minimod. */
+        name: "Typing Indicator",
+        
+        /**
+         * @property {object} config - Holds user-configurable settings for the script.
+         */
         config: {
             INDICATOR_INTERVAL: 1000, // ms between each animation frame
             RATE_LIMIT_MS: 550,
@@ -1605,6 +1621,7 @@ C = Added patches
             QUEUE_PROCESSOR_INTERVAL: 100, // How often to check the message queue
         },
 
+        /** @property {object} state - Dynamic state for this minimod. */
         state: {
             chatBoxElement: null,
             indicatorIntervalId: null,
@@ -1766,14 +1783,21 @@ C = Added patches
 
         // --- MINI-MOD PROPERTIES ---
 
-        name: "Assisted Healing",
-        core: null, // This will be set by the core script when registered
+        /** @property {object|null} core - A reference to the core module object, set upon registration. */
+        core: null,
 
+        /** @property {string} name - The display name of the minimod. */
+        name: "Assisted Healing",
+
+        /**
+         * @property {object} config - Holds user-configurable settings for the script.
+         */
         config: {
             HEAL_KEY: 'Q',      // The key to hold for healing
             HEAL_INTERVAL: 100, // How often to attempt to heal, in milliseconds
         },
 
+        /** @property {object} state - Dynamic state for this minimod. */
         state: {
             isHealKeyHeld: false,
             healIntervalId: null,
