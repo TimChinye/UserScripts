@@ -4,7 +4,7 @@
 // @description  This mod adds a number of mini-mods to enhance your MooMoo.io experience whilst not being too unfair to non-script users.
 // @license      GNU GPLv3 with the condition: no auto-heal or instant kill features may be added to the licensed material.
 // @author       TigerYT
-// @version      0.7.1
+// @version      0.7.2
 // @grant        none
 // @match        *://moomoo.io/*
 // @match        *://dev.moomoo.io/*
@@ -124,6 +124,20 @@ C = Added patches
                     EQUIP_ITEM: 'z',
                     EQUIP_WEARABLE: 'c'
                 },
+                PACKET_DATA: {
+                    WEARABLE_TYPES: {
+                        HAT: 'hat',
+                        ACCESSORY: 'accessory',
+                    },
+                    STORE_ACTIONS: {
+                        ADD_ITEM: 'buy',
+                        UPDATE_EQUIPPED: 'equip',
+                    },
+                    USE_ACTIONS: {
+                        START_USING: 1,
+                        STOP_USING: 0,
+                    }
+                },
                 ITEM_TYPES: {
                     PRIMARY_WEAPON: 0,
                     SECONDARY_WEAPON: 1,
@@ -134,15 +148,7 @@ C = Added patches
                     FARM: 6,
                     TRAP: 7,
                     EXTRA: 8,
-                    SPAWN_PAD: 9,
-                },
-                WEARABLE_TYPES: {
-                    HAT: 0,
-                    ACCESSORY: 1,
-                },
-                STORE_ACTIONS: {
-                    ADD_ITEM: 0,
-                    UPDATE_EQUIPPED: 1,
+                    SPAWN_PAD: 9
                 },
                 DOM: {
                     // IDs
@@ -345,7 +351,7 @@ C = Added patches
                     for (let i = 0; i < data.length; i += 2) members.push({ sid: data[i], name: data[i+1] });
                     return { members };
                 },
-                '5': ([itemType, itemID, action]) => ({ itemType: itemType === 0 ? 'hat' : 'accessory', itemID, action: action === 0 ? 'buy' : 'equip' }),
+                '5': ([itemType, itemID, action]) => ({ itemType: itemType === 0 ? this.data.constants.PACKET_DATA.WEARABLE_TYPES.HAT : this.data.constants.PACKET_DATA.WEARABLE_TYPES.ACCESSORY, itemID, action: action === 0 ? this.data.constants.PACKET_DATA.STORE_ACTIONS.ADD_ITEM : this.data.constants.PACKET_DATA.STORE_ACTIONS.UPDATE_EQUIPPED }),
                 '6': ([sid, message]) => ({ sid, message }),
                 '7': (data) => ({ minimapData: data }),
                 '8': ([x, y, value, type]) => ({ x, y, value, type }),
@@ -827,13 +833,13 @@ C = Added patches
             switch (packetName) {
                 case 'Setup Game': {
                     // Stores the client's player ID upon initial connection.
-                    this.core.state.playerId = packetData.playerID;
+                    this.core.state.playerId = packetData.yourSID;
                     break;
                 }
 
                 case 'Add Player': {
                     // When the client player spawns, trigger the core's onGameReady to finalize setup.
-                    if (this.core.state.playerId === packetData.id && packetData.isClientPlayer) {
+                    if (this.core.state.playerId === packetData.sid && packetData.isYou) {
                         this.core.onGameReady();
                     }
                     break;
@@ -842,11 +848,11 @@ C = Added patches
                 case 'Update Player Value': {
                     // Updates player resource counts and refreshes equippable item states.
                     // If a non-gold resource decreases, assume item usage and try to revert to the last selected weapon.
-                    const resourceType = packetData.resourceType;
+                    const resourceType = packetData.propertyName;
                     const oldAmount = this.core.state.playerResources[resourceType];
-                    this.core.state.playerResources[resourceType] = packetData.newAmount;
+                    this.core.state.playerResources[resourceType] = packetData.value;
 
-                    if (resourceType !== 'gold' && packetData.newAmount < oldAmount) {
+                    if (resourceType !== 'points' && packetData.value < oldAmount) {
                         this.state.selectedItemIndex = this.state.lastSelectedWeaponIndex;
                     }
 
@@ -857,9 +863,9 @@ C = Added patches
                 case 'Update Item Counts': {
                     // Updates the count of placed items (e.g; walls, traps) and refreshes equippable states.
                     // This is crucial for enforcing placement limits.
-                    const itemData = this.core.data._itemDataByServerId.get(packetData.serverItemID);
+                    const itemData = this.core.data._itemDataByServerId.get(packetData.groupID);
                     if (itemData && itemData.limitGroup) {
-                        this.core.state.playerPlacedItemCounts.set(itemData.limitGroup, packetData.newCount);
+                        this.core.state.playerPlacedItemCounts.set(itemData.limitGroup, packetData.count);
                         this.refreshEquippableState();
                     }
                     break;
@@ -1132,13 +1138,13 @@ C = Added patches
          * @param {object} packetData - The parsed data object from the incoming packet.
          */
         onPacket(packetName, packetData) {
-            if (packetName === 'Store / Shop State Update') {
-                const { action, itemID, state } = packetData;
+            if (packetName === 'Update Store Items') {
+                const { itemID, itemType, action } = packetData;
                 const C = this.core.data.constants;
-                if (action === C.STORE_ACTIONS.ADD_ITEM) {
-                    this.addWearableButton(itemID, state);
-                } else if (action === C.STORE_ACTIONS.UPDATE_EQUIPPED) {
-                    this.updateEquippedWearable(itemID, state);
+                if (action === C.PACKET_DATA.STORE_ACTIONS.ADD_ITEM) {
+                    this.addWearableButton(itemID, itemType);
+                } else if (action === C.PACKET_DATA.STORE_ACTIONS.UPDATE_EQUIPPED) {
+                    this.updateEquippedWearable(itemID, itemType);
                 }
             }
         },
@@ -1377,7 +1383,7 @@ C = Added patches
         addWearableButton(id, type) {
             const C = this.constants;
             const CoreC = this.core.data.constants;
-            const containerId = type === CoreC.WEARABLE_TYPES.HAT ? C.DOM.WEARABLES_HATS : C.DOM.WEARABLES_ACCESSORIES;
+            const containerId = type === CoreC.PACKET_DATA.WEARABLE_TYPES.HAT ? C.DOM.WEARABLES_HATS : C.DOM.WEARABLES_ACCESSORIES;
             const container = document.getElementById(containerId);
             if (!container) return;
 
@@ -1390,7 +1396,7 @@ C = Added patches
             btn.draggable = true;
             btn.dataset.wearableId = id;
 
-            const imagePath = type === CoreC.WEARABLE_TYPES.HAT ? C.URLS.HAT_IMG_PATH : C.URLS.ACCESSORY_IMG_PATH;
+            const imagePath = type === CoreC.PACKET_DATA.WEARABLE_TYPES.HAT ? C.URLS.HAT_IMG_PATH : C.URLS.ACCESSORY_IMG_PATH;
             btn.style.backgroundImage = `url(${C.URLS.BASE_IMG}${imagePath}${id}${C.URLS.IMG_EXT})`;
             btn.title = `Item ID: ${id}`;
 
@@ -1424,7 +1430,7 @@ C = Added patches
         updateEquippedWearable(id, type) {
             const C = this.constants;
             const CoreC = this.core.data.constants;
-            const containerId = type === CoreC.WEARABLE_TYPES.HAT ? C.DOM.WEARABLES_HATS : C.DOM.WEARABLES_ACCESSORIES;
+            const containerId = type === CoreC.PACKET_DATA.WEARABLE_TYPES.HAT ? C.DOM.WEARABLES_HATS : C.DOM.WEARABLES_ACCESSORIES;
             const container = document.getElementById(containerId);
             if (!container) return;
 
@@ -1478,10 +1484,10 @@ C = Added patches
 
                 if (hatMatch) {
                     id = parseInt(hatMatch[1]);
-                    type = CoreC.WEARABLE_TYPES.HAT;
+                    type = CoreC.PACKET_DATA.WEARABLE_TYPES.HAT;
                 } else if (accMatch) {
                     id = parseInt(accMatch[1]);
-                    type = CoreC.WEARABLE_TYPES.ACCESSORY;
+                    type = CoreC.PACKET_DATA.WEARABLE_TYPES.ACCESSORY;
                 } else {
                     return; // Not a wearable item
                 }
@@ -1752,8 +1758,6 @@ C = Added patches
         }
     };
 
-
-
     /**
      * @module AssistedHealMiniMod
      * @description A minimod that allows the player to automatically eat food by holding down a key.
@@ -1842,8 +1846,8 @@ C = Added patches
                 if (foodItemData) {
                     // The game uses an empty array for "use item at current location"
                     this.core.sendGamePacket(C.PACKET_TYPES.EQUIP_ITEM, [foodItemData.id, false]);
-                    this.core.sendGamePacket(C.PACKET_TYPES.USE_ITEM, [1]); // 1 is "start using"
-                    this.core.sendGamePacket(C.PACKET_TYPES.USE_ITEM, [0]); // 1 is "stop using"
+                    this.core.sendGamePacket(C.PACKET_TYPES.USE_ITEM, [C.PACKET_DATA.USE_ACTIONS.START_USING]); // 1 is "start using"
+                    this.core.sendGamePacket(C.PACKET_TYPES.USE_ITEM, [C.PACKET_DATA.USE_ACTIONS.STOP_USING]); // 0 is "stop using"
                 }
             }
         },
