@@ -250,84 +250,106 @@ C = Added patches
 
             /** @property {object} _packetNames - Maps packet ID codes to human-readable names for logging. */
             _packetNames: {
-                'io-init': 'Initial Connection',
-                '0': 'Ping',
-                '1': 'Clan Disbanded',
-                '2': 'Clan Join Request',
-                '3': 'Leave / Disband Clan',
-                '4': 'Clan Member Update',
-                '5': 'Store / Shop State Update',
-                '6': 'Chat Message Received',
-                '7': 'Unknown Event',
-                '8': 'Player Hit Effect?',
                 'A': 'All Clans List',
-                'C': 'Client Player Initialization',
-                'D': 'Other Player Spawn',
-                'E': 'Player Despawn',
+                'B': 'Disconnect',
+                'C': 'Setup Game',
+                'D': 'Add Player',
+                'E': 'Remove Player',
                 'G': 'Leaderboard Update',
-                'H': 'Create Map Objects',
-                'I': 'All Animals / NPCs State Update',
-                'J': 'Boss Skill / Animation Trigger',
-                'K': 'Player Attack Animation',
-                'L': 'Object Damaged',
-                'M': 'Turret Fired',
-                'N': 'Resource Update',
-                'O': 'Player Health Update',
-                'P': 'Player Death / Reset',
-                'Q': 'Remove Map Object',
-                'R': 'Remove Player-Placed Objects',
-                'S': 'Item Count Update',
-                'T': 'Player XP Update / Age Up',
-                'U': 'Upgrade / Buy Item',
-                'V': 'Ability State Update?',
-                'X': 'Create Projectile',
-                'Y': 'Projectile Distance?',
-                'Z': 'Game Elapsed?',
-                'a': 'All Players State Update',
-                'g': 'Clan Created'
+                'H': 'Load Game Objects',
+                'I': 'Update AI',
+                'J': 'Animate AI',
+                'K': 'Gather Animation',
+                'L': 'Wiggle Game Object',
+                'M': 'Shoot Turret',
+                'N': 'Update Player Value',
+                'O': 'Update Health',
+                'P': 'Kill Player',
+                'Q': 'Kill Object',
+                'R': 'Kill Objects',
+                'S': 'Update Item Counts',
+                'T': 'Update Age',
+                'U': 'Update Upgrades',
+                'V': 'Update Items',
+                'X': 'Add Projectile',
+                'Y': 'Remove Projectile',
+                'Z': 'Server Shutdown Notice',
+                'a': 'Update Players',
+                'g': 'Add Alliance',
+                '0': 'Ping Response',
+                '1': 'Delete Alliance',
+                '2': 'Alliance Notification',
+                '3': 'Set Player Team',
+                '4': 'Set Alliance Players',
+                '5': 'Update Store Items',
+                '6': 'Receive Chat',
+                '7': 'Update Minimap',
+                '8': 'Show Text',
+                '9': 'Ping Map'
             },
 
             /** @property {object} _packetFormatters - Maps packet IDs to functions that format raw packet data into structured objects for easier use and logging. */
             _packetFormatters: {
-                'io-init': ([socketID]) => ({ socketID }),
-                '0': () => ({}),
-                '1': ([clanSID]) => ({ clanSID }),
-                '2': ([requestingPlayerName, requestingPlayerID]) => ({ requestingPlayerName, requestingPlayerID }),
-                '3': (data) => ({ data }),
-                '4': (members) => ({ members: members.map(([id, name]) => ({ id, name })) }),
-                '5': ([action, itemID, state]) => ({ action, itemID, state }),
-                '6': ([playerID, message]) => ({ playerID, message }),
-                '7': ([state]) => ({ state }),
-                '8': ([x, y, size, type]) => ({ x, y, size, type }),
                 'A': ([data]) => data,
-                'C': ([playerID]) => ({ playerID }),
-                'D': ([data, isClientPlayer]) => ({ socketID: data[0], id: data[1], nickname: data[2], x: data[3], y: data[4], angle: data[5], health: data[6], maxHealth: data[7], size: data[8], skinID: data[9], isClientPlayer }),
-                'E': ([socketID]) => ({ socketID }),
-                'G': (args) => {
+                'B': ([reason]) => ({ reason }),
+                'C': ([yourSID]) => ({ yourSID }),
+                'D': ([playerData, isYou]) => ({
+                    id: playerData[0], sid: playerData[1], name: playerData[2], x: playerData[3], y: playerData[4],
+                    dir: playerData[5], health: playerData[6], maxHealth: playerData[7], scale: playerData[8],
+                    skinColor: playerData[9], isYou
+                }),
+                'E': ([id]) => ({ id }),
+                'G': (data) => {
                     const leaderboard = [];
-                    for (let i = 0; i < args.length; i += 3) leaderboard.push({ rank: args[i], name: args[i+1], score: args[i+2] });
+                    for (let i = 0; i < data.length; i += 3) leaderboard.push({ sid: data[i], name: data[i + 1], score: data[i + 2] });
                     return { leaderboard };
                 },
-                'H': (args) => ({ objectCount: args.length / 8 }),
-                'I': (args) => ({ npcCount: args.length / 7 }),
-                'J': ([animationID]) => ({ animationID }),
-                'K': ([attackingPlayerID, victimPlayerID, unknown]) => ({ attackingPlayerID, victimPlayerID, unknown }),
-                'L': ([playerAnimAngle, objectID]) => ({ playerAnimAngle, objectID }),
-                'M': ([turretObjectID, angle]) => ({ turretObjectID, angle }),
-                'N': ([resourceType, newAmount, source]) => ({ resourceType: resourceType === 'points' ? 'gold' : resourceType, newAmount, source }),
-                'O': ([playerID, newHealth]) => ({ playerID, newHealth }),
+                'H': (data) => {
+                    const objects = [];
+                    for (let i = 0; i < data.length; i += 8) objects.push({ sid: data[i], x: data[i+1], y: data[i+2], dir: data[i+3], scale: data[i+4], type: data[i+5], itemID: data[i+6], ownerSID: data[i+7] });
+                    return { objects };
+                },
+                'I': (data) => {
+                    const ais = [];
+                    for (let i = 0; i < data.length; i += 7) ais.push({ sid: data[i], index: data[i+1], x: data[i+2], y: data[i+3], dir: data[i+4], health: data[i+5], nameIndex: data[i+6] });
+                    return { ais };
+                },
+                'J': ([sid]) => ({ sid }),
+                'K': ([sid, didHit, index]) => ({ sid, didHit, weaponIndex: index }),
+                'L': ([dir, sid]) => ({ dir, sid }),
+                'M': ([sid, dir]) => ({ sid, dir }),
+                'N': ([propertyName, value, updateView]) => ({ propertyName, value, updateView }),
+                'O': ([sid, newHealth]) => ({ sid, newHealth }),
                 'P': () => ({}),
-                'Q': ([objectID]) => ({ objectID }),
-                'R': ([playerID]) => ({ playerID }),
-                'S': ([serverItemID, newCount]) => ({ serverItemID, newCount }),
-                'T': (args) => ({ currentExp: args[0], requiredExp: args[1], nextAge: args[2] }),
-                'U': ([serverItemID, levelOrCount]) => ({ serverItemID, levelOrCount }),
-                'V': (args) => args.length === 1 ? { data: args[0] } : { data: args[0], unknown: args[1] },
-                'X': ([x, y, angle, type, speed, range, ownerID, damage]) => ({ x, y, angle, type, speed, range, ownerID, damage }),
-                'Y': ([unknown, value]) => ({ unknown, value }),
-                'Z': ([timeElapsed]) => ({ timeElapsed }),
-                'a': (args) => ({ playerCount: args.length / 13 }),
-                'g': (data) => ({ newClan: data[0] })
+                'Q': ([sid]) => ({ sid }),
+                'R': ([sid]) => ({ sid }),
+                'S': ([groupID, count]) => ({ groupID, count }),
+                'T': ([xp, maxXP, age]) => ({ xp, maxXP, age }),
+                'U': ([points, age]) => ({ points, age }),
+                'V': ([items, isWeaponList]) => ({ items, isWeaponList }),
+                'X': ([x, y, dir, range, speed, index, layer, sid]) => ({ x, y, dir, range, speed, index, layer, sid }),
+                'Y': ([sid, newRange]) => ({ sid, newRange }),
+                'Z': ([countdown]) => ({ countdown }),
+                'a': (data) => {
+                    const players = [];
+                    for (let i = 0; i < data.length; i += 13) players.push({ sid: data[i], x: data[i+1], y: data[i+2], dir: data[i+3], buildIndex: data[i+4], weaponIndex: data[i+5], weaponVariant: data[i+6], team: data[i+7], isLeader: data[i+8], skinIndex: data[i+9], tailIndex: data[i+10], iconIndex: data[i+11], zIndex: data[i+12] });
+                    return { players };
+                },
+                'g': ([clanData]) => ({ newClan: clanData }),
+                '0': () => ({}),
+                '1': ([sid]) => ({ sid }),
+                '2': ([sid, name]) => ({ sid, name }),
+                '3': ([team, isOwner]) => ({ team, isOwner }),
+                '4': (data) => {
+                    const members = [];
+                    for (let i = 0; i < data.length; i += 2) members.push({ sid: data[i], name: data[i+1] });
+                    return { members };
+                },
+                '5': ([itemType, itemID, action]) => ({ itemType: itemType === 0 ? 'hat' : 'accessory', itemID, action: action === 0 ? 'buy' : 'equip' }),
+                '6': ([sid, message]) => ({ sid, message }),
+                '7': (data) => ({ minimapData: data }),
+                '8': ([x, y, value, type]) => ({ x, y, value, type }),
+                '9': ([x, y]) => ({ x, y })
             },
 
             /**
@@ -552,10 +574,10 @@ C = Added patches
                     */
 
                     // These four periodically spam, very quickly too.
-                    // const ignoredPackets = ['I', 'a', '0', '7', 'Z'];
+                    const ignoredPackets = ['I', 'a', '0', '7', 'Z'];
                     // Some of these are period, some aren't, all are very frequent.
-                    const ignoredPackets = ['I', 'a', '0', '7', 'Z', 'H', 'G', 'K', 'L', 'T'];
-                    if (ignoredPackets.includes(packetID.toString())) return;
+                    // const ignoredPackets = ['I', 'a', '0', '7', 'Z', 'H', 'G', 'K', 'L', 'T'];
+                    // if (ignoredPackets.includes(packetID.toString())) return;
                     // Other people get hurt / heal around you quite often, it's a little annoying:
                     // if (packetID.toString() === 'O' && packetData.playerID !== this.state.playerId) return;
 
