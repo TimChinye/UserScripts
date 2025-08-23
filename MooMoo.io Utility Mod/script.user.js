@@ -4,7 +4,7 @@
 // @description  This mod adds a number of mini-mods to enhance your MooMoo.io experience whilst not being too unfair to non-script users.
 // @license      GNU GPLv3 with the condition: no auto-heal or instant kill features may be added to the licensed material.
 // @author       TigerYT
-// @version      0.5.3
+// @version      0.5.4
 // @grant        none
 // @match        *://moomoo.io/*
 // @match        *://dev.moomoo.io/*
@@ -146,6 +146,7 @@ C = Added patches
                     ACTION_BAR_ITEM_CLASS: '.actionBarItem',
                     STORE_MENU_COMPACT_CLASS: 'compact',
                     STORE_MENU_EXPANDED_CLASS: 'expanded',
+                    STORE_TAB_CLASS: 'storeTab',
                 },
                 CSS: {
                     DISPLAY_NONE: 'none',
@@ -1124,7 +1125,7 @@ C = Added patches
                 WEARABLES_TOOLBAR: 'wearablesToolbar',
                 WEARABLES_HATS: 'wearablesHats',
                 WEARABLES_ACCESSORIES: 'wearablesAccessories',
-                WEARABLES_GRID_CLASS: 'wearablesGrid',
+                WEARABLES_GRID_CLASS: 'wearables-grid',
                 WEARABLE_BUTTON_CLASS: 'wearable-btn',
                 WEARABLE_BUTTON_ID_PREFIX: 'wearable-btn-',
                 JOIN_ALLIANCE_BUTTON_CLASS: '.joinAlBtn',
@@ -1235,17 +1236,29 @@ C = Added patches
             const CoreC = this.core.data.constants;
             const style = document.createElement('style');
             style.textContent = `
-                #${CoreC.DOM.STORE_HOLDER} {
-                    height: 100%;
+                #${CoreC.DOM.STORE_MENU} {
+                    --extended-width: 80px;
+
+                    .${CoreC.DOM.STORE_TAB_CLASS} {
+                        padding: 10px calc(10px + (var(--extended-width) / 4));
+                    }
+
+                    #${CoreC.DOM.STORE_HOLDER} {
+                        height: 100%;
+                        width: calc(400px + var(--extended-width));
+                    }
+
+                    &.${CoreC.DOM.STORE_MENU_COMPACT_CLASS} {
+                        top: 20px;
+                        height: calc(100% - 240px);
+                    }
+
+                    &.${CoreC.DOM.STORE_MENU_EXPANDED_CLASS} {
+                        top: 140px;
+                        height: calc(100% - 360px);
+                    }
                 }
-                #${CoreC.DOM.STORE_MENU}.${CoreC.DOM.STORE_MENU_COMPACT_CLASS} {
-                    top: 20px;
-                    height: calc(100% - 240px);
-                }
-                #${CoreC.DOM.STORE_MENU}.${CoreC.DOM.STORE_MENU_EXPANDED_CLASS} {
-                    top: 140px;
-                    height: calc(100% - 360px);
-                }
+
                 .${C.DOM.PIN_BUTTON_CLASS} {
                     --text-color: hsl(from #80eefc calc(h + 215) s l);
                     color: var(--text-color);
@@ -1254,6 +1267,7 @@ C = Added patches
                         color: hsl(from var(--text-color) h calc(s * 0.5) calc(l * 0.75));
                     }
                 }
+
                 #${C.DOM.WEARABLES_TOOLBAR} {
                     position: absolute;
                     left: 10px;
@@ -1270,22 +1284,25 @@ C = Added patches
                         color: #fff;
                         font-size: 31px;
                         font-weight: inherit;
+
                         & > span {
                             font-size: 0.5em;
                             vertical-align: middle;
                         }
                     }
                 }
+
                 .${C.DOM.WEARABLES_GRID_CLASS} {
                     display: flex;
                     flex-wrap: wrap;
                     gap: 5px;
                     justify-content: flex-start;
-                    margin-top: 5px;
                 }
+
                 .${C.DOM.WEARABLE_BUTTON_CLASS} {
                     width: 40px;
                     height: 40px;
+                    margin: 4px 0;
                     border: 2px solid grey;
                     background-size: contain;
                     background-position: center;
@@ -1294,16 +1311,19 @@ C = Added patches
                     background-color: #4a4a4a;
                     border-radius: 4px;
                     transition: all 0.2s ease;
+
                     &:hover {
                         background-color: #6a6a6a;
                         border-color: white;
                     }
+
                     &.${C.DOM.WEARABLE_SELECTED_CLASS} {
                         background-color: #5b9c52;
                         border-color: lightgreen;
                         box-shadow: 0 0 8px lightgreen;
                     }
                 }
+
                 .${C.DOM.WEARABLE_BUTTON_CLASS}.${C.DOM.WEARABLE_DRAGGING_CLASS} {
                     opacity: ${C.CSS.DRAGGING_OPACITY};
                 }
