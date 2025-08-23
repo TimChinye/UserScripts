@@ -1,10 +1,10 @@
 // ==UserScript==
-// @name         MOOMOO.IO Utility Mod! (Scroll Wheel Inventory, Wearables Hotbar)
+// @name         MOOMOO.IO Utility Mod! (Scroll Wheel Inventory, Wearables Hotbar, Typing Indicator, More!)
 // @namespace    https://greasyfork.org/users/137913
 // @description  This mod adds a number of mini-mods to enhance your MooMoo.io experience whilst not being too unfair to non-script users.
 // @license      GNU GPLv3 with the condition: no auto-heal or instant kill features may be added to the licensed material.
 // @author       TigerYT
-// @version      0.5.8
+// @version      0.6.0
 // @grant        none
 // @match        *://moomoo.io/*
 // @match        *://dev.moomoo.io/*
@@ -1556,10 +1556,184 @@ C = Added patches
         },
     };
 
+    /**
+     * @module TypingIndicatorMiniMod
+     * @description Shows a "..." typing indicator in chat while the user is typing,
+     * while respecting the game's chat rate limit to ensure user messages are prioritized.
+     */
+    const TypingIndicatorMiniMod = {
+        
+        // --- MINI-MOD PROPERTIES ---
+
+        name: "Typing Indicator",
+        core: null, // This will be set by the core script when registered
+
+        config: {
+            INDICATOR_INTERVAL: 1000, // ms between each animation frame
+            RATE_LIMIT_MS: 550,
+            START_DELAY: 1000,       // A safe buffer for the ~500ms chat cooldown
+            ANIMATION_FRAMES: ['.', '..', '...'],
+            QUEUE_PROCESSOR_INTERVAL: 100, // How often to check the message queue
+        },
+
+        state: {
+            chatBoxElement: null,
+            indicatorIntervalId: null,
+            startIndicatorTimeoutId: null,
+            queueProcessorIntervalId: null,
+            animationFrameIndex: 0,
+            lastMessageSentTime: 0,
+            messageQueue: [],
+        },
+
+        // --- MINI-MOD LIFECYCLE & HOOKS ---
+
+        /**
+         * Finds the chat box element and attaches all necessary event listeners for the mod to function.
+         * This is the entry point for the minimod's setup.
+         */
+        addEventListeners() {
+            this.state.chatBoxElement = document.getElementById('chatBox');
+
+            if (!this.state.chatBoxElement) {
+                Logger.error("Could not find chatBox element. Mod will not function.");
+                return;
+            }
+
+            this.state.chatBoxElement.addEventListener('focus', this.handleFocus.bind(this));
+            this.state.chatBoxElement.addEventListener('blur', this.handleBlur.bind(this));
+            this.state.chatBoxElement.addEventListener('keydown', this.handleKeyDown.bind(this));
+            
+            // Start the queue processor, which will run continuously to send queued messages.
+            this.startQueueProcessor();
+            Logger.log("Event listeners attached and queue processor started.");
+        },
+
+        // --- EVENT HANDLERS ---
+
+        /** Handles when the user clicks into the chat box. */
+        handleFocus() {
+            // Instead of starting immediately, set a timeout to begin the animation.
+            // This prevents the indicator from flashing for accidental clicks or very fast messages.
+            if (this.state.startIndicatorTimeoutId) clearTimeout(this.state.startIndicatorTimeoutId); // <-- NEW
+            this.state.startIndicatorTimeoutId = setTimeout(() => { // <-- CHANGED
+            this.startTypingIndicator();
+            }, this.config.START_DELAY);
+        },
+
+        /** Handles when the user clicks out of the chat box. */
+        handleBlur() {
+            clearTimeout(this.state.startIndicatorTimeoutId); // <-- NEW: Cancel pending start
+            this.stopTypingIndicator();
+        },
+
+        /** Intercepts the 'Enter' key press to queue the user's message instead of sending it immediately. */
+        handleKeyDown(event) {
+            if (event.key === 'Enter') {
+                // Prevent the game from sending the message. We will handle it.
+                event.preventDefault();
+                clearTimeout(this.state.startIndicatorTimeoutId); // <-- NEW: Cancel pending start
+
+                const message = this.state.chatBoxElement.value.trim();
+                if (message) {
+                    this.queueUserMessage(message);
+                }
+
+                // Clear the chat box and stop the indicator, as the user is done typing.
+                this.state.chatBoxElement.value = '';
+                this.stopTypingIndicator();
+            }
+        },
+        
+        // --- CORE LOGIC ---
+
+        /** Starts the "..." animation loop. */
+        startTypingIndicator() {
+            if (this.state.indicatorIntervalId) return; // Already running
+
+            Logger.log("Starting typing indicator.");
+            this.state.animationFrameIndex = 0;
+            
+            // Run once immediately, then start the interval
+            this.animateIndicator();
+            this.state.indicatorIntervalId = setInterval(this.animateIndicator.bind(this), this.config.INDICATOR_INTERVAL);
+        },
+
+        /** Stops the "..." animation loop and clears the indicator from chat. */
+        stopTypingIndicator() {
+            if (!this.state.indicatorIntervalId) return; // Already stopped
+
+            Logger.log("Stopping typing indicator and cleaning up queue.");
+            clearInterval(this.state.indicatorIntervalId);
+            this.state.indicatorIntervalId = null;
+
+            // Remove any pending system messages
+            this.state.messageQueue = this.state.messageQueue.filter(msg => msg.type !== 'system');
+
+            // Queue one final, empty message to clear the indicator that might be visible in chat.
+            this.queueSystemMessage('');
+        },
+        
+        /** Sends the next frame of the animation. */
+        animateIndicator() {
+            const frame = this.config.ANIMATION_FRAMES[this.state.animationFrameIndex];
+            this.queueSystemMessage(frame);
+            
+            // Cycle to the next frame
+            this.state.animationFrameIndex = (this.state.animationFrameIndex + 1) % this.config.ANIMATION_FRAMES.length;
+        },
+
+        // --- RATE LIMIT & QUEUE MANAGEMENT ---
+
+        /** Starts the interval that processes the message queue. */
+        startQueueProcessor() {
+            if (this.state.queueProcessorIntervalId) return;
+            this.state.queueProcessorIntervalId = setInterval(this.processMessageQueue.bind(this), this.config.QUEUE_PROCESSOR_INTERVAL);
+        },
+
+        /** Adds a user's message to the front of the queue to be sent. */
+        queueUserMessage(message) {
+            Logger.log(`Queueing user message: "${message}"`);
+            this.state.messageQueue.unshift({ type: 'user', content: message });
+        },
+        
+        /** Adds a system message (like the indicator) to the back of the queue. */
+        queueSystemMessage(message) {
+            // Optimization: Don't queue up a ton of indicator dots. 
+            // If the last message in the queue is also an indicator, replace it.
+            const lastInQueue = this.state.messageQueue[this.state.messageQueue.length - 1];
+            if (lastInQueue && lastInQueue.type === 'system') {
+                this.state.messageQueue[this.state.messageQueue.length - 1].content = message;
+            } else {
+                this.state.messageQueue.push({ type: 'system', content: message });
+            }
+        },
+        
+        /**
+         * Checks the queue and sends the next message if the chat rate limit has passed.
+         * This is the core of the rate-limiting solution.
+         */
+        processMessageQueue() {
+            const canSendMessage = Date.now() - this.state.lastMessageSentTime > this.config.RATE_LIMIT_MS;
+            
+            if (canSendMessage && this.state.messageQueue.length > 0) {
+                const messageToSend = this.state.messageQueue.shift(); // Get the next message
+                
+                this.core.sendGamePacket('6', [messageToSend.content]);
+                this.state.lastMessageSentTime = Date.now();
+                
+                if (messageToSend.type === 'user') {
+                    Logger.log(`Sent queued user message: "${messageToSend.content}"`);
+                }
+            }
+        }
+    };
+
     // --- REGISTER MINI-MODS & INITIALIZE ---
 
     MooMooUtilityMod.registerMod(ScrollInventoryMiniMod);
     MooMooUtilityMod.registerMod(WearablesToolbarMiniMod);
+    MooMooUtilityMod.registerMod(TypingIndicatorMiniMod);
 
     MooMooUtilityMod.init();
 })();
