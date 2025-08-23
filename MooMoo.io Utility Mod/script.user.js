@@ -4,7 +4,7 @@
 // @description  This mod adds a number of mini-mods to enhance your MooMoo.io experience whilst not being too unfair to non-script users.
 // @license      GNU GPLv3 with the condition: no auto-heal or instant kill features may be added to the licensed material.
 // @author       TigerYT
-// @version      0.6.0
+// @version      0.7.0
 // @grant        none
 // @match        *://moomoo.io/*
 // @match        *://dev.moomoo.io/*
@@ -120,8 +120,9 @@ C = Added patches
              */
             constants: {
                 PACKET_TYPES: {
+                    USE_ITEM: 'F',
                     EQUIP_ITEM: 'z',
-                    EQUIP_WEARABLE: 'c',
+                    EQUIP_WEARABLE: 'c'
                 },
                 ITEM_TYPES: {
                     PRIMARY_WEAPON: 0,
@@ -1729,11 +1730,120 @@ C = Added patches
         }
     };
 
+
+
+    /**
+     * @module AssistedHealMiniMod
+     * @description A minimod that allows the player to automatically eat food by holding down a key.
+     */
+    const AssistedHealMiniMod = {
+
+        // --- MINI-MOD PROPERTIES ---
+
+        name: "Assisted Healing",
+        core: null, // This will be set by the core script when registered
+
+        config: {
+            HEAL_KEY: 'Q',      // The key to hold for healing
+            HEAL_INTERVAL: 100, // How often to attempt to heal, in milliseconds
+        },
+
+        state: {
+            isHealKeyHeld: false,
+            healIntervalId: null,
+            lastHealTime: 0,
+        },
+
+        // --- MINI-MOD LIFECYCLE & HOOKS ---
+
+        init() {
+            // This is where you could load settings from localStorage if you had them
+            this.addEventListeners();
+        },
+
+        addEventListeners() {
+            document.addEventListener('keydown', this.handleKeyDown.bind(this));
+            document.addEventListener('keyup', this.handleKeyUp.bind(this));
+        },
+
+        // --- EVENT HANDLERS ---
+
+        handleKeyDown(event) {
+            if (this._isInputFocused() || event.key.toUpperCase() !== this.config.HEAL_KEY) return;
+            
+            if (!this.state.isHealKeyHeld) {
+                this.state.isHealKeyHeld = true;
+                this.startHealing();
+            }
+        },
+
+        handleKeyUp(event) {
+            if (event.key.toUpperCase() === this.config.HEAL_KEY) {
+                this.state.isHealKeyHeld = false;
+                this.stopHealing();
+            }
+        },
+
+        // --- CORE LOGIC ---
+
+        startHealing() {
+            if (this.state.healIntervalId) return; // Already healing
+
+            Logger.log("Starting Assisted Heal.", "color: #00e676;");
+            // Immediately try to heal once, then start the interval
+            this.attemptHeal();
+            this.state.healIntervalId = setInterval(this.attemptHeal.bind(this), this.config.HEAL_INTERVAL);
+        },
+
+        stopHealing() {
+            if (this.state.healIntervalId) {
+                Logger.log("Stopping Assisted Heal.", "color: #ff1744;");
+                clearInterval(this.state.healIntervalId);
+                this.state.healIntervalId = null;
+            }
+        },
+
+        attemptHeal() {
+            const C = this.core.data.constants;
+
+            // Find the first available food item on the action bar
+            const actionBar = document.getElementById(C.DOM.ACTION_BAR);
+            if (!actionBar) return;
+
+            const foodItemElem = Array.from(actionBar.children).find(el => {
+                const itemData = this.core.getItemFromElem(el);
+                return itemData && itemData.itemType === C.ITEM_TYPES.FOOD && this.core.isEquippableItem(el);
+            });
+
+            if (foodItemElem) {
+                const foodItemData = this.core.getItemFromElem(foodItemElem);
+                if (foodItemData) {
+                    // The game uses an empty array for "use item at current location"
+                    this.core.sendGamePacket(C.PACKET_TYPES.EQUIP_ITEM, [foodItemData.id, false]);
+                    this.core.sendGamePacket(C.PACKET_TYPES.USE_ITEM, [1]); // 1 is "start using"
+                    this.core.sendGamePacket(C.PACKET_TYPES.USE_ITEM, [0]); // 1 is "stop using"
+                }
+            }
+        },
+
+        // --- HELPER FUNCTIONS ---
+
+        _isInputFocused() {
+            const C = this.core.data.constants;
+            const isVisible = (id) => {
+                const elem = document.getElementById(id);
+                return elem && elem.style.display === C.CSS.DISPLAY_BLOCK;
+            };
+            return isVisible(C.DOM.CHAT_HOLDER) || isVisible(C.DOM.STORE_MENU) || isVisible(C.DOM.ALLIANCE_MENU);
+        }
+    }
+
     // --- REGISTER MINI-MODS & INITIALIZE ---
 
     MooMooUtilityMod.registerMod(ScrollInventoryMiniMod);
     MooMooUtilityMod.registerMod(WearablesToolbarMiniMod);
     MooMooUtilityMod.registerMod(TypingIndicatorMiniMod);
+    MooMooUtilityMod.registerMod(AssistedHealMiniMod);
 
     MooMooUtilityMod.init();
 })();
