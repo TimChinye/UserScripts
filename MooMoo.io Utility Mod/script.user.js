@@ -4,7 +4,7 @@
 // @description  This mod adds a number of mini-mods to enhance your MooMoo.io experience whilst not being too unfair to non-script users.
 // @license      GNU GPLv3 with the condition: no auto-heal or instant kill features may be added to the licensed material.
 // @author       TigerYT
-// @version      0.7.3
+// @version      0.7.4
 // @grant        none
 // @match        *://moomoo.io/*
 // @match        *://dev.moomoo.io/*
@@ -774,6 +774,18 @@ C = Added patches
 
             this.data.initialize();
             this.initializeHooks();
+
+            // UPDATED: Initialize all registered mini-mods that have an init() function.
+            this.miniMods.forEach(mod => {
+                if (typeof mod.init === 'function') {
+                    Logger.log(`Initializing minimod: ${mod.name || 'Unnamed Mod'}`);
+                    try {
+                        mod.init();
+                    } catch (e) {
+                        Logger.error(`Error during init of ${mod.name || 'Unnamed Mod'}:`, e);
+                    }
+                }
+            });
 
             // Exposes the core to the global window object for debugging purposes.
             window.MooMooUtilityMod = this;
