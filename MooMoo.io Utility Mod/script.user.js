@@ -648,13 +648,30 @@ C = Added patches
          * Updates the main menu title screen with custom styling.
          */
         updateGameTitleScreen() {
-            const titleElem = document.getElementById(this.data.constants.DOM.GAME_TITLE);
-            if (titleElem) {
-                titleElem.innerHTML = `MOOMOO<span>.</span>io`;
-                Logger.log("Updated game title screen.", "color: #4CAF50;");
-            } else {
-                Logger.warn("Game title element not found on DOMContentLoaded.");
-            }
+            const targetNode = document.body;
+            const config = { childList: true, subtree: true };
+
+            const updateTitle = () => {
+                const titleElem = document.getElementById(this.data.constants.DOM.GAME_TITLE);
+                if (titleElem) {
+                    titleElem.innerHTML = `MOOMOO<span>.</span>io`;
+                    Logger.log("Updated game title screen.", "color: #4CAF50;");
+                    return true; // Indicate success
+                }
+                return false; // Indicate failure
+            };
+
+            // First, try to update immediately in case the element already exists.
+            if (updateTitle()) return; // Job done
+
+            // If it doesn't exist, set up the observer to watch for it.
+            const observer = new MutationObserver((mutationsList, obs) => {
+                // We only need to find it once, when found & updated, stop updating.
+                if (updateTitle()) obs.disconnect();
+            });
+
+            // Start observing the target node for configured mutations.
+            observer.observe(targetNode, config);
         },
 
         /**
@@ -696,24 +713,21 @@ C = Added patches
 
         /**
          * Manually scans the window object to find the game's encoder and decoder.
-         * This is a fallback mechanism in case the prototype hooks fail due to a race condition.
+         * This is a fallback mechanism in case the prototype hooks fail.
+         * @param {Function} onSuccessCallback - The function to call if both codecs are found.
          */
-        findCodecsManually() {
+        findCodecsManually(onSuccessCallback) {
             Logger.warn("Prototype hooks failed or timed out. Initiating manual scan...");
 
             const MAX_SEARCH_DEPTH = 5;
             const visited = new Set(); // To avoid infinite loops in circular objects
 
-            const scanObject = (obj, depth, onCodecFound) => {
-                if (depth > MAX_SEARCH_DEPTH || !obj || visited.has(obj)) {
+            const scanObject = (obj, depth) => {
+                // Stop conditions for recursion
+                if (depth > MAX_SEARCH_DEPTH || !obj || visited.has(obj) || (this.state.gameEncoder && this.state.gameDecoder)) {
                     return;
                 }
                 visited.add(obj);
-
-                // Check if both codecs have been found already to stop the scan
-                if (this.state.gameEncoder && this.state.gameDecoder) {
-                    return;
-                }
 
                 for (const key in obj) {
                     try {
@@ -724,91 +738,104 @@ C = Added patches
                         if (!this.state.gameEncoder && prop.initialBufferSize !== undefined && typeof prop.encode === 'function') {
                             Logger.log("Manual scan found the ENCODER.", "color: #4CAF50;");
                             this.state.gameEncoder = prop;
-                            onCodecFound();
                         }
 
                         // Heuristic 2: Look for the msgpack decoder
                         if (!this.state.gameDecoder && prop.maxExtLength !== undefined && typeof prop.decode === 'function') {
                             Logger.log("Manual scan found the DECODER.", "color: #4CAF50;");
                             this.state.gameDecoder = prop;
-                            onCodecFound();
                         }
 
-                        // If we found both, no need to scan further
+                        // If we found both, stop scanning this branch
                         if (this.state.gameEncoder && this.state.gameDecoder) {
                             return;
                         }
 
                         // Recurse into the nested object
-                        scanObject(prop, depth + 1, onCodecFound);
+                        scanObject(prop, depth + 1);
 
                     } catch (e) {
-                        // Ignore errors from accessing certain properties (e.g; cross-origin iframes)
+                        // Ignore errors from accessing certain properties
                     }
                 }
             };
 
-            // We need to pass the onCodecFound function into the scanner
-            let codecsFound = 0;
-            const onCodecFound = () => {
-                codecsFound++;
-                if (codecsFound === 2 && !this.state.isListenerActive) {
-                    this.miniMods.forEach(mod => {
-                        if (typeof mod.addEventListeners === 'function') mod.addEventListeners();
-                    });
-                    this.state.isListenerActive = true;
-                }
-            };
+            scanObject(window, 0);
 
-            scanObject(window, 0, onCodecFound);
-
-            if (!this.state.gameEncoder || !this.state.gameDecoder) {
+            if (this.state.gameEncoder && this.state.gameDecoder) {
+                Logger.log("Manual scan succeeded.", "color: #4CAF50;");
+                onSuccessCallback(); // Trigger the final setup
+            } else {
                 Logger.error("Manual scan failed to find one or both msgpack codecs. The script may not function correctly.");
             }
         },
 
         /**
          * Sets up all necessary hooks to integrate with the game's internal objects and network traffic.
+         * This new logic ensures that message listeners are only attached *after* codecs are confirmed to be found.
          */
         initializeHooks() {
             const C = this.data.constants;
 
-            // Hook 1: Find msgpack codecs
-            let codecsFound = 0;
-            const onCodecFound = () => {
-                codecsFound++;
-                if (codecsFound === 2 && !this.state.isListenerActive) {
-                    Logger.log("Both msgpack codecs found. Activating event listeners.", "color: #ffb700;");
-                    // Once both codecs are found, attach all the event listeners that are needed.
-                    this.miniMods.forEach(mod => {
-                        if (typeof mod.addEventListeners === 'function') mod.addEventListeners();
-                    });
-                    this.state.isListenerActive = true;
+            // This is the single, centralized function that attaches all critical event listeners
+            // once we are sure the codecs have been found.
+            const onCodecsReady = () => {
+                if (this.state.isListenerActive) return; // Prevent this from running more than once
+
+                Logger.log("Both msgpack codecs found. Attaching all listeners.", "color: #ffb700;");
+
+                // 1. Attach the core packet handler to the captured WebSocket instance
+                if (this.state.gameSocket) {
+                    this.state.gameSocket.addEventListener('message', this.handleSocketMessage.bind(this));
+                } else {
+                    // This should theoretically never happen if the WS hook works, but it's good practice to check.
+                    return Logger.error("Codecs found, but the game WebSocket was not captured! Cannot process packets.");
+                }
+
+                // 2. Attach all minimod-specific event listeners (e.g., wheel, keydown)
+                this.miniMods.forEach(mod => {
+                    if (typeof mod.addEventListeners === 'function') mod.addEventListeners();
+                });
+
+                this.state.isListenerActive = true;
+            };
+
+
+            // Hook 1: Find msgpack codecs via prototype mutation (the fast, preferred path)
+            let codecsFoundByHook = 0;
+            const onCodecFoundByHook = () => {
+                codecsFoundByHook++;
+                if (codecsFoundByHook === 2) {
+                    onCodecsReady();
                 }
             };
 
-            // Set a timeout as a fallback in case the prototype hooks don't fire.
-            setTimeout(() => {
-                if (codecsFound < 2) this.findCodecsManually();
-            }, C.TIMEOUTS.MANUAL_CODEC_SCAN);
+            this.hookIntoPrototype("initialBufferSize", (obj) => { this.state.gameEncoder = obj; onCodecFoundByHook(); });
+            this.hookIntoPrototype("maxExtLength", (obj) => { this.state.gameDecoder = obj; onCodecFoundByHook(); });
 
-            this.hookIntoPrototype("initialBufferSize", (obj) => { this.state.gameEncoder = obj; onCodecFound(); });
-            this.hookIntoPrototype("maxExtLength", (obj) => { this.state.gameDecoder = obj; onCodecFound(); });
 
-            // Hook 2: Intercept WebSocket creation
+            // Hook 2: Intercept WebSocket creation to get a reference to the game's socket instance.
             const originalWebSocket = window.WebSocket;
             window.WebSocket = new Proxy(originalWebSocket, {
                 construct: (target, args) => {
                     const wsInstance = new target(...args);
                     this.state.gameSocket = wsInstance;
+                    Logger.log("Game WebSocket instance captured.");
 
-                    wsInstance.addEventListener('message', this.handleSocketMessage.bind(this));
-
-                    // Restore the original WebSocket constructor now that we have our instance.
+                    // Restore the original WebSocket constructor immediately after capturing the first instance.
                     window.WebSocket = originalWebSocket;
                     return wsInstance;
                 }
             });
+
+
+            // Fallback Trigger: If the prototype hooks haven't found the codecs after a delay,
+            // assume they failed and initiate the manual scan.
+            setTimeout(() => {
+                if (!this.state.isListenerActive) {
+                    this.findCodecsManually(onCodecsReady); // Pass the final setup callback
+                }
+            }, C.TIMEOUTS.MANUAL_CODEC_SCAN);
         },
 
         /**
@@ -839,9 +866,7 @@ C = Added patches
             this.injectCSS();
 
             // Wait for the body to load before trying to modify its elements.
-            document.addEventListener('DOMContentLoaded', () => {
-                this.updateGameTitleScreen();
-            });
+            this.updateGameTitleScreen();
 
             this.miniMods.forEach(mod => {
                 if (typeof mod.init === 'function') {
@@ -1084,9 +1109,8 @@ C = Added patches
             if (equippableItems[1]) {
                 const secondEquippableItem = this.core.getItemFromElem(equippableItems[1]);
                 if (this.state.selectedItemIndex <= C.ITEM_TYPES.SECONDARY_WEAPON) {
-                    this.state.lastSelectedWeaponIndex = secondEquippableItem?.itemType > C.ITEM_TYPES.SECONDARY_WEAPON
-                        ? C.ITEM_TYPES.PRIMARY_WEAPON
-                        : this.state.selectedItemIndex;
+                    const isSingleWielder = secondEquippableItem?.itemType > C.ITEM_TYPES.SECONDARY_WEAPON;
+                    this.state.lastSelectedWeaponIndex = isSingleWielder ? C.ITEM_TYPES.PRIMARY_WEAPON : this.state.selectedItemIndex;
                 }
             }
 
