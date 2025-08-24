@@ -4,7 +4,7 @@
 // @description  This mod adds a number of mini-mods to enhance your MooMoo.io experience whilst not being too unfair to non-script users.
 // @license      GNU GPLv3 with the condition: no auto-heal or instant kill features may be added to the licensed material.
 // @author       TigerYT
-// @version      0.7.4
+// @version      0.7.7
 // @grant        none
 // @match        *://moomoo.io/*
 // @match        *://dev.moomoo.io/*
@@ -163,6 +163,7 @@ C = Added patches
                     ENTER_GAME_BUTTON: 'enterGame',
                     UPGRADE_HOLDER: 'upgradeHolder',
                     UPGRADE_COUNTER: 'upgradeCounter',
+                    GAME_TITLE: 'gameName',
 
                     // Selectors / Patterns / Classes
                     ACTION_BAR_ITEM_REGEX: /^actionBarItem(\d+)$/,
@@ -583,7 +584,7 @@ C = Added patches
                     const ignoredPackets = ['I', 'a', '0', '7', 'Z'];
                     // Some of these are period, some aren't, all are very frequent.
                     // const ignoredPackets = ['I', 'a', '0', '7', 'Z', 'H', 'G', 'K', 'L', 'T'];
-                    // if (ignoredPackets.includes(packetID.toString())) return;
+                    if (ignoredPackets.includes(packetID.toString())) return;
                     // Other people get hurt / heal around you quite often, it's a little annoying:
                     // if (packetID.toString() === 'O' && packetData.playerID !== this.state.playerId) return;
 
@@ -596,24 +597,63 @@ C = Added patches
         // --- INITIALIZATION & HOOKING ---
 
         /**
-         * Collects CSS from all registered mini-mods and injects it into a single style tag.
+         * Collects CSS from the core mod and all registered mini-mods and injects it into a single style tag.
          */
         injectCSS() {
-            const allCSS = this.miniMods.reduce((acc, mod) => {
-                if (mod && typeof mod.applyCSS === 'function' && mod.applyCSS().trim()) {
-                    acc.push('/* --- Injecting "' + mod.name + '" MiniMod --- */'.concat(mod.applyCSS().trim()));
-                }
+            const allCSS = [];
 
-                return acc;
-            }, []);
+            // Add core CSS
+            const coreCSS = this.applyCoreCSS().trim();
+            if (coreCSS) {
+                allCSS.push('/* --- Injecting Core Mod CSS --- */\n' + coreCSS);
+            }
+
+            // Add minimod CSS
+            this.miniMods.forEach(mod => {
+                if (mod && typeof mod.applyCSS === 'function') {
+                    const modCSS = mod.applyCSS().trim();
+                    if (modCSS) {
+                        allCSS.push('/* --- Injecting "' + (mod.name || 'Unnamed Mod') + '" MiniMod CSS --- */\n' + modCSS);
+                }
+                }
+            });
 
             if (allCSS.length > 0) {
                 const style = document.createElement('style');
-                style.textContent = allCSS.join('\n/* --- MiniMod CSS Separator --- */\n\n');
+                style.textContent = allCSS.join('\n\n/* --- CSS Separator --- */\n\n');
                 document.head.append(style);
-                Logger.log(`Injected CSS from ${allCSS.length} mini-mod(s).`, "color: #4CAF50;");
+                Logger.log(`Injected CSS from core and ${this.miniMods.filter(m => typeof m.applyCSS === 'function' && m.applyCSS().trim()).length} mini-mod(s).`, "color: #4CAF50;");
             } else {
-                Logger.log("No CSS to inject from mini-mods.");
+                Logger.log("No CSS to inject.");
+            }
+        },
+
+        /**
+         * Returns the CSS styles for the core mod, such as the title screen enhancement.
+         * @returns {string} The CSS string.
+         */
+        applyCoreCSS() {
+            return `
+                #${this.data.constants.DOM.GAME_TITLE} {
+                    --text-shadow-colour: oklch(from currentColor calc(l * 0.82) c h);
+                    text-shadow: 0 1px 0 var(--text-shadow-colour),   0 2px 0 var(--text-shadow-colour),   0 3px 0 var(--text-shadow-colour),   0 4px 0 var(--text-shadow-colour),   0 5px 0 var(--text-shadow-colour),   0 6px 0 var(--text-shadow-colour),   0 7px 0 var(--text-shadow-colour),   0 8px 0 var(--text-shadow-colour),   0 9px 0 var(--text-shadow-colour);
+                }
+                #${this.data.constants.DOM.GAME_TITLE} > span {
+                    color: #fbeec9;
+                }
+            `;
+        },
+
+        /**
+         * Updates the main menu title screen with custom styling.
+         */
+        updateGameTitleScreen() {
+            const titleElem = document.getElementById(this.data.constants.DOM.GAME_TITLE);
+            if (titleElem) {
+                titleElem.innerHTML = `MOOMOO<span>.</span>io`;
+                Logger.log("Updated game title screen.", "color: #4CAF50;");
+            } else {
+                Logger.warn("Game title element not found on DOMContentLoaded.");
             }
         },
 
@@ -749,9 +789,7 @@ C = Added patches
 
             // Set a timeout as a fallback in case the prototype hooks don't fire.
             setTimeout(() => {
-                if (codecsFound < 2) {
-                    this.findCodecsManually();
-                }
+                if (codecsFound < 2) this.findCodecsManually();
             }, C.TIMEOUTS.MANUAL_CODEC_SCAN);
 
             this.hookIntoPrototype("initialBufferSize", (obj) => { this.state.gameEncoder = obj; onCodecFound(); });
@@ -795,10 +833,16 @@ C = Added patches
             Logger.log("--- MOOMOO.IO Utility Mod Initializing ---", "color: #ffb700; font-weight: bold;");
 
             this.data.initialize();
-            this.injectCSS();
             this.initializeHooks();
 
-            // UPDATED: Initialize all registered mini-mods that have an init() function.
+            // Inject styles immediately, as document.head is available early.
+            this.injectCSS();
+
+            // Wait for the body to load before trying to modify its elements.
+            document.addEventListener('DOMContentLoaded', () => {
+                this.updateGameTitleScreen();
+            });
+
             this.miniMods.forEach(mod => {
                 if (typeof mod.init === 'function') {
                     Logger.log(`Initializing minimod: ${mod.name || 'Unnamed Mod'}`);
@@ -1179,10 +1223,11 @@ C = Added patches
             draggedItem: null,
         },
 
-        // --- INITIAL UI SETUP ---
+        // --- MINI-MOD LIFECYCLE & HOOKS ---
 
         /**
-         * Injects the CSS rules required for styling the wearables toolbar and its buttons.
+         * Returns the CSS rules required for styling the wearables toolbar and its buttons.
+         * @returns {string} The CSS string.
          */
         applyCSS() {
             return `
@@ -1307,10 +1352,8 @@ C = Added patches
          */
         onGameReady() {
             if (!this.core.state.playerHasRespawned && !document.getElementById(this.constants.DOM.WEARABLES_TOOLBAR)) {
-                const C = this.core.data.constants;
-
                 // Wait for Game UI to load before proceeding
-                const gameUI = document.getElementById(C.DOM.GAME_UI);
+                const gameUI = document.getElementById(this.core.data.constants.DOM.GAME_UI);
                 this.core.waitForVisible(gameUI).then(() => {
                     this.createWearablesToolbarUI();
                     this.setupDynamicPositioning();
