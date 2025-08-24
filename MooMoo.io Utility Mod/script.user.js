@@ -596,6 +596,28 @@ C = Added patches
         // --- INITIALIZATION & HOOKING ---
 
         /**
+         * Collects CSS from all registered mini-mods and injects it into a single style tag.
+         */
+        injectCSS() {
+            const allCSS = this.miniMods.reduce((acc, mod) => {
+                if (mod && typeof mod.applyCSS === 'function' && mod.applyCSS().trim()) {
+                    acc.push('/* --- Injecting "' + mod.name + '" MiniMod --- */'.concat(mod.applyCSS().trim()));
+                }
+
+                return acc;
+            }, []);
+
+            if (allCSS.length > 0) {
+                const style = document.createElement('style');
+                style.textContent = allCSS.join('\n/* --- MiniMod CSS Separator --- */\n\n');
+                document.head.append(style);
+                Logger.log(`Injected CSS from ${allCSS.length} mini-mod(s).`, "color: #4CAF50;");
+            } else {
+                Logger.log("No CSS to inject from mini-mods.");
+            }
+        },
+
+        /**
          * Finds the game's msgpack encoder/decoder instances by hooking into Object.prototype.
          * It temporarily redefines a property setter on Object.prototype. When the game's code
          * creates an object with a specific property (like 'initialBufferSize'), our setter
@@ -773,6 +795,7 @@ C = Added patches
             Logger.log("--- MOOMOO.IO Utility Mod Initializing ---", "color: #ffb700; font-weight: bold;");
 
             this.data.initialize();
+            this.injectCSS();
             this.initializeHooks();
 
             // UPDATED: Initialize all registered mini-mods that have an init() function.
@@ -1101,6 +1124,10 @@ C = Added patches
         /** @property {string} name - The display name of the minimod. */
         name: "Wearables Toolbar",
 
+        /** @property {object} config - Holds user-configurable settings and CSS for the script. */
+        config: {
+        },
+
         /** @property {object} constants - Constants specific to this minimod. */
         constants: {
             HOTKEYS: {
@@ -1152,6 +1179,110 @@ C = Added patches
             draggedItem: null,
         },
 
+        // --- INITIAL UI SETUP ---
+
+        /**
+         * Injects the CSS rules required for styling the wearables toolbar and its buttons.
+         */
+        applyCSS() {
+            return `
+                #${this.core.data.constants.DOM.STORE_MENU} {
+                    top: 20px;
+                    height: calc(100% - 240px);
+
+                    --extended-width: 80px;
+
+                    .${this.core.data.constants.DOM.STORE_TAB_CLASS} {
+                        padding: 10px calc(10px + (var(--extended-width) / 4));
+                    }
+
+                    #${this.core.data.constants.DOM.STORE_HOLDER} {
+                        height: 100%;
+                        width: calc(400px + var(--extended-width));
+                    }
+
+                    &.${this.core.data.constants.DOM.STORE_MENU_EXPANDED_CLASS} {
+                        top: 140px;
+                        height: calc(100% - 360px);
+                    }
+                }
+
+                .${this.constants.DOM.PIN_BUTTON_CLASS} {
+                    --text-color: hsl(from #80eefc calc(h + 215) s l);
+                    color: var(--text-color);
+                    padding-right: 5px;
+
+                    &:hover {
+                        color: hsl(from var(--text-color) h calc(s * 0.5) calc(l * 0.75));
+                    }
+                }
+
+                #${this.constants.DOM.ITEM_INFO_HOLDER} {
+                    top: calc(20px + var(--top-offset, 0px));
+                }
+
+                #${this.constants.DOM.WEARABLES_TOOLBAR} {
+                    position: absolute;
+                    left: 20px;
+                    top: 20px;
+                    padding: 7px 10px 5px;
+                    width: auto;
+                    max-width: 440px;
+                    background-color: rgba(0, 0, 0, 0.25);
+                    border-radius: 3px;
+                    pointer-events: all;
+                    
+                    & > h1 {
+                        margin: 0;
+                        color: #fff;
+                        font-size: 31px;
+                        font-weight: inherit;
+
+                        & > span {
+                            font-size: 0.5em;
+                            vertical-align: middle;
+                        }
+                    }
+                }
+
+                .${this.constants.DOM.WEARABLES_GRID_CLASS} {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 5px;
+                    justify-content: flex-start;
+                }
+
+                .${this.constants.DOM.WEARABLE_BUTTON_CLASS} {
+                    width: 40px;
+                    height: 40px;
+                    margin: 4px 0;
+                    border: 2px solid rgba(255, 255, 255, 0.25);
+                    background-size: contain;
+                    background-position: center;
+                    background-repeat: no-repeat;
+                    cursor: pointer;
+                    background-color: rgba(0, 0, 0, 0.125);
+                    border-radius: 4px;
+                    transition: all 0.2s ease;
+
+                    &:hover {
+                        background-color: rgba(255, 255, 255, 0.125);
+                        border-color: white;
+                    }
+
+                    &.${this.constants.DOM.WEARABLE_SELECTED_CLASS} {
+                        background-color: #5b9c52;
+                        border-color: lightgreen;
+                        box-shadow: 0 0 8px lightgreen;
+                    }
+                }
+
+                .${this.constants.DOM.WEARABLE_BUTTON_CLASS}.${this.constants.DOM.WEARABLE_DRAGGING_CLASS} {
+                    opacity: ${this.constants.CSS.DRAGGING_OPACITY};
+                }
+            `
+        },
+
         // --- MINI-MOD LIFECYCLE & HOOKS ---
 
         /**
@@ -1181,8 +1312,6 @@ C = Added patches
                 // Wait for Game UI to load before proceeding
                 const gameUI = document.getElementById(C.DOM.GAME_UI);
                 this.core.waitForVisible(gameUI).then(() => {
-                    this.injectCSS();
-
                     this.createWearablesToolbarUI();
                     this.setupDynamicPositioning();
                     this.setupStoreMenuObservers();
@@ -1191,112 +1320,6 @@ C = Added patches
         },
 
         // --- INITIAL UI SETUP ---
-
-        /**
-         * Injects the CSS rules required for styling the wearables toolbar and its buttons.
-         */
-        injectCSS() {
-            const C = this.constants;
-            const CoreC = this.core.data.constants;
-            const style = document.createElement('style');
-            style.textContent = `
-                #${CoreC.DOM.STORE_MENU} {
-                    top: 20px;
-                    height: calc(100% - 240px);
-
-                    --extended-width: 80px;
-
-                    .${CoreC.DOM.STORE_TAB_CLASS} {
-                        padding: 10px calc(10px + (var(--extended-width) / 4));
-                    }
-
-                    #${CoreC.DOM.STORE_HOLDER} {
-                        height: 100%;
-                        width: calc(400px + var(--extended-width));
-                    }
-
-                    &.${CoreC.DOM.STORE_MENU_EXPANDED_CLASS} {
-                        top: 140px;
-                        height: calc(100% - 360px);
-                    }
-                }
-
-                .${C.DOM.PIN_BUTTON_CLASS} {
-                    --text-color: hsl(from #80eefc calc(h + 215) s l);
-                    color: var(--text-color);
-                    padding-right: 5px;
-
-                    &:hover {
-                        color: hsl(from var(--text-color) h calc(s * 0.5) calc(l * 0.75));
-                    }
-                }
-
-                #${C.DOM.ITEM_INFO_HOLDER} {
-                    top: calc(20px + var(--top-offset, 0px));
-                }
-
-                #${C.DOM.WEARABLES_TOOLBAR} {
-                    position: absolute;
-                    left: 20px;
-                    top: 20px;
-                    padding: 7px 10px 5px;
-                    width: auto;
-                    max-width: 440px;
-                    background-color: rgba(0, 0, 0, 0.25);
-                    border-radius: 3px;
-                    pointer-events: all;
-                    
-                    & > h1 {
-                        margin: 0;
-                        color: #fff;
-                        font-size: 31px;
-                        font-weight: inherit;
-
-                        & > span {
-                            font-size: 0.5em;
-                            vertical-align: middle;
-                        }
-                    }
-                }
-
-                .${C.DOM.WEARABLES_GRID_CLASS} {
-                    display: flex;
-                    flex-wrap: wrap;
-                    gap: 5px;
-                    justify-content: flex-start;
-                }
-
-                .${C.DOM.WEARABLE_BUTTON_CLASS} {
-                    width: 40px;
-                    height: 40px;
-                    margin: 4px 0;
-                    border: 2px solid rgba(255, 255, 255, 0.25);
-                    background-size: contain;
-                    background-position: center;
-                    background-repeat: no-repeat;
-                    cursor: pointer;
-                    background-color: rgba(0, 0, 0, 0.125);
-                    border-radius: 4px;
-                    transition: all 0.2s ease;
-
-                    &:hover {
-                        background-color: rgba(255, 255, 255, 0.125);
-                        border-color: white;
-                    }
-
-                    &.${C.DOM.WEARABLE_SELECTED_CLASS} {
-                        background-color: #5b9c52;
-                        border-color: lightgreen;
-                        box-shadow: 0 0 8px lightgreen;
-                    }
-                }
-
-                .${C.DOM.WEARABLE_BUTTON_CLASS}.${C.DOM.WEARABLE_DRAGGING_CLASS} {
-                    opacity: ${C.CSS.DRAGGING_OPACITY};
-                }
-            `;
-            document.head.append(style);
-        },
 
         /**
          * Creates the HTML structure for the wearables toolbar and appends it to the document body.
@@ -1352,10 +1375,22 @@ C = Added patches
                 infoHolder.style.setProperty('--top-offset', isExpanded ? `${toolbar.offsetHeight + 20}px` : '0px');
             };
 
-            // Use ResizeObserver to efficiently react to changes in the info holder's size.
-            // This covers it appearing, disappearing, or its content changing height.
-            const observer = new ResizeObserver(updatePosition);
-            observer.observe(infoHolder);
+            // Observer 1: Reacts to any change in the info holder's size (e.g., appearing/disappearing).
+            const infoHolderObserver = new ResizeObserver(updatePosition);
+            infoHolderObserver.observe(infoHolder);
+
+            // Observer 2: Reacts to significant changes in the toolbar's height,
+            // which happens when a new row of wearables is pinned.
+            let lastToolbarHeight = toolbar.offsetHeight;
+            const toolbarObserver = new ResizeObserver(() => {
+                const currentHeight = toolbar.offsetHeight;
+                // Only update if the height changes by 10px or more to avoid minor fluctuations.
+                if (Math.abs(currentHeight - lastToolbarHeight) >= 10) {
+                    updatePosition();
+                    lastToolbarHeight = currentHeight; // Update the last known height
+                }
+            });
+            toolbarObserver.observe(toolbar);
 
             // Run once at the start to set the initial position.
             updatePosition();
@@ -1898,7 +1933,7 @@ C = Added patches
             };
             return isVisible(C.DOM.CHAT_HOLDER) || isVisible(C.DOM.STORE_MENU) || isVisible(C.DOM.ALLIANCE_MENU);
         }
-    }
+    };
 
     // --- REGISTER MINI-MODS & INITIALIZE ---
 
