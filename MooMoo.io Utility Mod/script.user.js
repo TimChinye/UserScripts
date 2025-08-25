@@ -76,8 +76,14 @@ C = Added patches
          * @property {object} state - Holds the dynamic state of the script, changing as the user plays.
          */
         state: {
-            /** @property {boolean} isListenerActive - Tracks if the 'wheel' event listener has been attached. */
+            /** @property {boolean} isListenerActive - Tracks if the final setup has been completed. */
             isListenerActive: false,
+            
+            /** @property {boolean} codecsReady - Tracks if the msgpack encoder and decoder have been found. */
+            codecsReady: false,
+
+            /** @property {boolean} socketReady - Tracks if the game's WebSocket instance has been captured. */
+            socketReady: false,
 
             /** @property {boolean} isSandbox - Tracks if the player is in sandbox mode for item limits. */
             isSandbox: window.location.host.startsWith('sandbox.'),
@@ -101,7 +107,10 @@ C = Added patches
             playerPlacedItemCounts: new Map(),
 
             /** @property {boolean} playerHasRespawned - Tracks if the player has respawned. */
-            playerHasRespawned: false
+            playerHasRespawned: false,
+
+            /** @property {number|null} manualScanTimeoutId - The ID of the timeout for the manual codec scan fallback. */
+            manualScanTimeoutId: null
         },
 
         /**
@@ -152,6 +161,8 @@ C = Added patches
                 },
                 DOM: {
                     // IDs
+                    UTILITY_MOD_STYLES: 'utilityModStyles',
+                    MAIN_MENU: 'mainMenu',
                     STORE_MENU: 'storeMenu',
                     STORE_HOLDER: 'storeHolder',
                     RESOURCE_DISPLAY: 'resDisplay',
@@ -164,6 +175,9 @@ C = Added patches
                     UPGRADE_HOLDER: 'upgradeHolder',
                     UPGRADE_COUNTER: 'upgradeCounter',
                     GAME_TITLE: 'gameName',
+                    LOADING_TEXT: 'loadingText',
+                    LOADING_INFO: 'loadingInfo',
+                    MENU_CARD_HOLDER: 'menuCardHolder',
 
                     // Selectors / Patterns / Classes
                     ACTION_BAR_ITEM_REGEX: /^actionBarItem(\d+)$/,
@@ -620,6 +634,7 @@ C = Added patches
 
             if (allCSS.length > 0) {
                 const style = document.createElement('style');
+                style.id = this.data.constants.DOM.UTILITY_MOD_STYLES;
                 style.textContent = allCSS.join('\n\n/* --- CSS Separator --- */\n\n');
                 document.head.append(style);
                 Logger.log(`Injected CSS from core and ${this.miniMods.filter(m => typeof m.applyCSS === 'function' && m.applyCSS().trim()).length} mini-mod(s).`, "color: #4CAF50;");
@@ -633,45 +648,196 @@ C = Added patches
          * @returns {string} The CSS string.
          */
         applyCoreCSS() {
+            const CoreC = this.data.constants;
             return `
-                #${this.data.constants.DOM.GAME_TITLE} {
+                #${CoreC.DOM.GAME_TITLE} {
                     --text-shadow-colour: oklch(from currentColor calc(l * 0.82) c h);
                     text-shadow: 0 1px 0 var(--text-shadow-colour),   0 2px 0 var(--text-shadow-colour),   0 3px 0 var(--text-shadow-colour),   0 4px 0 var(--text-shadow-colour),   0 5px 0 var(--text-shadow-colour),   0 6px 0 var(--text-shadow-colour),   0 7px 0 var(--text-shadow-colour),   0 8px 0 var(--text-shadow-colour),   0 9px 0 var(--text-shadow-colour);
                 }
-                #${this.data.constants.DOM.GAME_TITLE} > span {
-                    color: #fbeec9;
+                #${CoreC.DOM.GAME_TITLE} > span {
+                    color: oklch(0.95 0.05 92.5);
+                }
+                #${CoreC.DOM.LOADING_INFO} {
+                    color: #fff;
+                    text-align: center;
+                    font-size: 22.5px;
                 }
             `;
         },
 
         /**
-         * Updates the main menu title screen with custom styling.
+         * Updates the main menu title screen and injects necessary UI elements.
          */
         updateGameTitleScreen() {
-            const targetNode = document.body;
-            const config = { childList: true, subtree: true };
+            const CoreC = this.data.constants;
 
-            const updateTitle = () => {
-                const titleElem = document.getElementById(this.data.constants.DOM.GAME_TITLE);
+            const setupUI = () => {
+                const titleElem = document.getElementById(CoreC.DOM.GAME_TITLE);
                 if (titleElem) {
+                    // Update Title
                     titleElem.innerHTML = `MOOMOO<span>.</span>io`;
                     Logger.log("Updated game title screen.", "color: #4CAF50;");
+
+                    // Inject custom info element for the reload logic
+                    const menuContainer = document.getElementById('menuContainer');
+                    if (menuContainer && !document.getElementById(CoreC.DOM.LOADING_INFO)) {
+                        menuContainer.insertAdjacentHTML('beforeend', `<div id="${CoreC.DOM.LOADING_INFO}" style="display: none;"><br>Couldn't intercept in time. May be a network issue.<br></div>`);
+                    }
                     return true; // Indicate success
                 }
                 return false; // Indicate failure
             };
 
-            // First, try to update immediately in case the element already exists.
-            if (updateTitle()) return; // Job done
+            if (setupUI()) return;
 
-            // If it doesn't exist, set up the observer to watch for it.
             const observer = new MutationObserver((mutationsList, obs) => {
-                // We only need to find it once, when found & updated, stop updating.
-                if (updateTitle()) obs.disconnect();
+                if (setupUI()) obs.disconnect();
             });
 
-            // Start observing the target node for configured mutations.
-            observer.observe(targetNode, config);
+            observer.observe(document.body, { childList: true, subtree: true });
+        },
+
+
+        /**
+         * Centralized method to manage the visibility of UI elements.
+         * This prevents duplicating style logic across multiple methods.
+         * @param {'loadingError' | 'gameplay'} state The UI state to display.
+         */
+        _setUIState(state) {
+            const CoreC = this.data.constants;
+
+            // Cache DOM elements if not already done.
+            // It's better to do this once during an init phase.
+            const mainMenu = document.getElementById(CoreC.DOM.MAIN_MENU);
+            const menuCardHolder = document.getElementById(CoreC.DOM.MENU_CARD_HOLDER);
+            const loadingText = document.getElementById(CoreC.DOM.LOADING_TEXT);
+            const loadingInfo = document.getElementById(CoreC.DOM.LOADING_INFO);
+            const gameCanvas = document.getElementById(CoreC.DOM.GAME_CANVAS);
+            const gameUI = document.getElementById(CoreC.DOM.GAME_UI);
+            const utilityModStyles = document.getElementById(CoreC.DOM.UTILITY_MOD_STYLES);
+
+            // Define state properties
+            const isError = state === 'showError';
+            const isGameplay = state === 'showGameplay';
+            if (!(isError || isGameplay)) return; // Invalid state
+
+            // Toggle visibility based on state
+            mainMenu.style.display = isError ? 'block' : 'none';
+            menuCardHolder.style.display = isGameplay ? 'block' : 'none';
+            loadingText.style.display = isError ? 'block' : 'none';
+            gameCanvas.style.display = isGameplay ? 'block' : 'none';
+            gameUI.style.display = isGameplay ? 'block' : 'none';
+            document.body.style.backgroundImage = isError ? 'url("https://i.imgur.com/MDCy7gT.png")' : '';
+            if (isGameplay) utilityModStyles.remove();
+            if (isGameplay) gameName.innerHTML = 'MOOMOO.io';
+            
+            // Update content and styles specific to the error state
+            if (loadingInfo) {
+                loadingInfo.style.display = isError ? 'block' : 'none';
+                if (isError) loadingText.childNodes[0].nodeValue = `Re-attempting Connection...`;
+            }
+        },
+
+        /**
+         * Returns a Promise that resolves on the next animation frame.
+         * A helper for ensuring DOM updates are painted.
+         */
+        _nextFrame() {
+            return new Promise(resolve => requestAnimationFrame(resolve));
+        },
+
+        /**
+         * Returns a Promise that resolves after a specified delay.
+         * @param {number} ms - The delay in milliseconds.
+         * @returns {Promise<void>} A promise that resolves after the delay.
+         */
+        _wait(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        },
+
+        /**
+         * Waits for the user to proceed from the main menu by observing when the game ui becomes visible.
+         * @returns {Promise<void>} A promise that resolves when the game ui is visible.
+         */
+        _waitForGameUIToShow() {
+            return new Promise(resolve => {
+                const gameUI = document.getElementById(this.data.constants.DOM.GAME_UI);
+                if (gameUI.style.display === 'block') {
+                    // If menu is already hidden, the user has clicked 'enterGame', resolve and revert immediately.
+                    return resolve();
+                } else {
+                    // Otherwise, the menu is visible. We need to wait for the user to click.
+                    // We'll use a MutationObserver to watch for the `style` attribute to change.
+                    const observer = new MutationObserver(() => {
+                        if (gameUI.style.display === 'block') {
+                            observer.disconnect();
+                            resolve(); // The user has clicked, resolve and revert immediately.
+                        }
+                    });
+
+                    observer.observe(gameUI, { attributes: true, attributeFilter: ['style'] });
+                }
+
+            });
+        },
+
+        /**
+         * Handles the scenario where the script fails to hook codecs. It waits for the
+         * user to try to enter the game, then displays a message and prompts for a reload.
+         */
+        async handleHookFailureAndReload() {
+            // Wait for the user to start the game.
+            await this._waitForGameUIToShow();
+
+            // Log the error and switch the UI to a loading/error state.
+            Logger.error("Failed to intercept codecs before WebSocket creation. The script cannot function. Reloading...");
+            this._setUIState('showError');
+
+            // Give the user time to read the message.
+            await this._wait(5000);
+
+            // Add the cancellation message and ensure it's painted before the prompt.
+            const loadingInfo = document.getElementById(this.data.constants.DOM.LOADING_INFO);
+            if (loadingInfo) {
+                const cancellationMsg = "If you cancel, you can play the game as normal - without the mod enabled.";
+                loadingInfo.append(cancellationMsg);
+            }
+
+            await this._nextFrame(); // Wait for the browser to acknowledge the DOM change and be ready to paint it
+            await this._nextFrame(); // Wait for that paint to have actually happened by scheduling on the *next* frame
+
+            // Trigger the reload prompt.
+            window.location.reload();
+
+            // If the user cancels, this timeout runs, reverting the UI to gameplay mode.
+            // The arrow function correctly preserves the `this` context.
+            setTimeout(() => this._setUIState('showGameplay'), 0);
+        },
+
+        /**
+         * Checks if both codecs and the WebSocket are ready. If so, performs the final
+         * setup by attaching all necessary event listeners. This function ensures that
+         * we don't try to attach listeners prematurely.
+         */
+        attemptFinalSetup() {
+            // Do nothing if we're not ready yet, or if we've already done this.
+            if (this.state.isListenerActive || !this.state.codecsReady || !this.state.socketReady) {
+                return;
+            }
+
+            // Both components are confirmed ready. Let's go!
+            this.state.isListenerActive = true;
+            Logger.log("Codecs and WebSocket are ready. Attaching all listeners.", "color: #ffb700;");
+
+            // Attach the core packet handler to the captured WebSocket instance
+            this.state.gameSocket.addEventListener('message', this.handleSocketMessage.bind(this));
+
+            // Attach all minimod-specific event listeners (e.g., wheel, keydown)
+            this.miniMods.forEach(mod => {
+                if (typeof mod.addEventListeners === 'function') {
+                    mod.addEventListeners();
+                }
+            });
         },
 
         /**
@@ -772,41 +938,20 @@ C = Added patches
 
         /**
          * Sets up all necessary hooks to integrate with the game's internal objects and network traffic.
-         * This new logic ensures that message listeners are only attached *after* codecs are confirmed to be found.
+         * This new logic correctly handles the asynchronous nature of finding codecs and capturing the WebSocket.
          */
         initializeHooks() {
-            const C = this.data.constants;
-
-            // This is the single, centralized function that attaches all critical event listeners
-            // once we are sure the codecs have been found.
-            const onCodecsReady = () => {
-                if (this.state.isListenerActive) return; // Prevent this from running more than once
-
-                Logger.log("Both msgpack codecs found. Attaching all listeners.", "color: #ffb700;");
-
-                // 1. Attach the core packet handler to the captured WebSocket instance
-                if (this.state.gameSocket) {
-                    this.state.gameSocket.addEventListener('message', this.handleSocketMessage.bind(this));
-                } else {
-                    // This should theoretically never happen if the WS hook works, but it's good practice to check.
-                    return Logger.error("Codecs found, but the game WebSocket was not captured! Cannot process packets.");
-                }
-
-                // 2. Attach all minimod-specific event listeners (e.g., wheel, keydown)
-                this.miniMods.forEach(mod => {
-                    if (typeof mod.addEventListeners === 'function') mod.addEventListeners();
-                });
-
-                this.state.isListenerActive = true;
-            };
-
+            const CoreC = this.data.constants;
 
             // Hook 1: Find msgpack codecs via prototype mutation (the fast, preferred path)
             let codecsFoundByHook = 0;
             const onCodecFoundByHook = () => {
                 codecsFoundByHook++;
                 if (codecsFoundByHook === 2) {
-                    onCodecsReady();
+                    clearTimeout(this.state.manualScanTimeoutId); // Success! Clear the fallback timer.
+                    this.state.codecsReady = true;
+                    Logger.log("Both msgpack codecs found via prototype hooks.", "color: #4CAF50;");
+                    this.attemptFinalSetup();
                 }
             };
 
@@ -818,11 +963,22 @@ C = Added patches
             const originalWebSocket = window.WebSocket;
             window.WebSocket = new Proxy(originalWebSocket, {
                 construct: (target, args) => {
+                    // CRITICAL CHECK: If the game tries to connect before we have the codecs, it's too late.
+                    if (!this.state.gameEncoder || !this.state.gameDecoder) {
+                        this.handleHookFailureAndReload();
+                        // Although the page will reload, we return a dummy object to prevent further errors.
+                        return new target(...args);
+                    }
+
                     const wsInstance = new target(...args);
                     this.state.gameSocket = wsInstance;
+                    this.state.socketReady = true;
                     Logger.log("Game WebSocket instance captured.");
 
-                    // Restore the original WebSocket constructor immediately after capturing the first instance.
+                    // Now that the socket is ready, try to complete the setup.
+                    this.attemptFinalSetup();
+
+                    // Restore the original WebSocket constructor immediately.
                     window.WebSocket = originalWebSocket;
                     return wsInstance;
                 }
@@ -831,11 +987,11 @@ C = Added patches
 
             // Fallback Trigger: If the prototype hooks haven't found the codecs after a delay,
             // assume they failed and initiate the manual scan.
-            setTimeout(() => {
-                if (!this.state.isListenerActive) {
-                    this.findCodecsManually(onCodecsReady); // Pass the final setup callback
+            this.state.manualScanTimeoutId = setTimeout(() => {
+                if (!this.state.codecsReady) {
+                    this.findCodecsManually(this.attemptFinalSetup.bind(this));
                 }
-            }, C.TIMEOUTS.MANUAL_CODEC_SCAN);
+            }, CoreC.TIMEOUTS.MANUAL_CODEC_SCAN);
         },
 
         /**
@@ -1254,29 +1410,31 @@ C = Added patches
          * @returns {string} The CSS string.
          */
         applyCSS() {
+            const CoreC = this.core.data.constants;
+            const C = this.constants;
             return `
-                #${this.core.data.constants.DOM.STORE_MENU} {
+                #${CoreC.DOM.STORE_MENU} {
                     top: 20px;
                     height: calc(100% - 240px);
 
                     --extended-width: 80px;
 
-                    .${this.core.data.constants.DOM.STORE_TAB_CLASS} {
+                    .${CoreC.DOM.STORE_TAB_CLASS} {
                         padding: 10px calc(10px + (var(--extended-width) / 4));
                     }
 
-                    #${this.core.data.constants.DOM.STORE_HOLDER} {
+                    #${CoreC.DOM.STORE_HOLDER} {
                         height: 100%;
                         width: calc(400px + var(--extended-width));
                     }
 
-                    &.${this.core.data.constants.DOM.STORE_MENU_EXPANDED_CLASS} {
+                    &.${CoreC.DOM.STORE_MENU_EXPANDED_CLASS} {
                         top: 140px;
                         height: calc(100% - 360px);
                     }
                 }
 
-                .${this.constants.DOM.PIN_BUTTON_CLASS} {
+                .${C.DOM.PIN_BUTTON_CLASS} {
                     --text-color: hsl(from #80eefc calc(h + 215) s l);
                     color: var(--text-color);
                     padding-right: 5px;
@@ -1286,11 +1444,11 @@ C = Added patches
                     }
                 }
 
-                #${this.constants.DOM.ITEM_INFO_HOLDER} {
+                #${C.DOM.ITEM_INFO_HOLDER} {
                     top: calc(20px + var(--top-offset, 0px));
                 }
 
-                #${this.constants.DOM.WEARABLES_TOOLBAR} {
+                #${C.DOM.WEARABLES_TOOLBAR} {
                     position: absolute;
                     left: 20px;
                     top: 20px;
@@ -1314,14 +1472,14 @@ C = Added patches
                     }
                 }
 
-                .${this.constants.DOM.WEARABLES_GRID_CLASS} {
+                .${C.DOM.WEARABLES_GRID_CLASS} {
                     display: flex;
                     flex-wrap: wrap;
                     gap: 5px;
                     justify-content: flex-start;
                 }
 
-                .${this.constants.DOM.WEARABLE_BUTTON_CLASS} {
+                .${C.DOM.WEARABLE_BUTTON_CLASS} {
                     width: 40px;
                     height: 40px;
                     margin: 4px 0;
@@ -1339,15 +1497,15 @@ C = Added patches
                         border-color: white;
                     }
 
-                    &.${this.constants.DOM.WEARABLE_SELECTED_CLASS} {
+                    &.${C.DOM.WEARABLE_SELECTED_CLASS} {
                         background-color: #5b9c52;
                         border-color: lightgreen;
                         box-shadow: 0 0 8px lightgreen;
                     }
                 }
 
-                .${this.constants.DOM.WEARABLE_BUTTON_CLASS}.${this.constants.DOM.WEARABLE_DRAGGING_CLASS} {
-                    opacity: ${this.constants.CSS.DRAGGING_OPACITY};
+                .${C.DOM.WEARABLE_BUTTON_CLASS}.${C.DOM.WEARABLE_DRAGGING_CLASS} {
+                    opacity: ${C.CSS.DRAGGING_OPACITY};
                 }
             `
         },
