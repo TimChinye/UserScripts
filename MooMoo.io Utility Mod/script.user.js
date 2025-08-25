@@ -4,7 +4,7 @@
 // @description  This mod adds a number of mini-mods to enhance your MooMoo.io experience whilst not being too unfair to non-script users.
 // @license      GNU GPLv3 with the condition: no auto-heal or instant kill features may be added to the licensed material.
 // @author       TigerYT
-// @version      0.7.7
+// @version      0.7.8
 // @grant        none
 // @match        *://moomoo.io/*
 // @match        *://dev.moomoo.io/*
@@ -86,7 +86,7 @@ C = Added patches
             socketReady: false,
 
             /** @property {boolean} isSandbox - Tracks if the player is in sandbox mode for item limits. */
-            isSandbox: window.location.host.startsWith('sandbox.'),
+            isSandbox: window.location.host.startsWith('sandbox'),
 
             /** @property {WebSocket|null} gameSocket - A reference to the game's main WebSocket instance. */
             gameSocket: null,
@@ -202,7 +202,7 @@ C = Added patches
                     SCROLL_UP: -1,
                 },
                 TIMEOUTS: {
-                    MANUAL_CODEC_SCAN: 5000,
+                    MANUAL_CODEC_SCAN: 2500,
                 },
             },
 
@@ -681,7 +681,7 @@ C = Added patches
                     // Inject custom info element for the reload logic
                     const menuContainer = document.getElementById('menuContainer');
                     if (menuContainer && !document.getElementById(CoreC.DOM.LOADING_INFO)) {
-                        menuContainer.insertAdjacentHTML('beforeend', `<div id="${CoreC.DOM.LOADING_INFO}" style="display: none;"><br>Couldn't intercept in time. May be a network issue.<br></div>`);
+                        menuContainer.insertAdjacentHTML('beforeend', `<div id="${CoreC.DOM.LOADING_INFO}" style="display: none;"><br>Couldn't intercept in time. May be a network issue. Try not entering the game so fast.<br></div>`);
                     }
                     return true; // Indicate success
                 }
@@ -727,7 +727,7 @@ C = Added patches
             loadingText.style.display = isError ? 'block' : 'none';
             gameCanvas.style.display = isGameplay ? 'block' : 'none';
             gameUI.style.display = isGameplay ? 'block' : 'none';
-            document.body.style.backgroundImage = isError ? 'url("https://i.imgur.com/MDCy7gT.png")' : '';
+            document.body.style.backgroundImage = isError ? 'url("https://tinyurl.com/MooMooBackground")' : '';
             if (isGameplay) utilityModStyles.remove();
             if (isGameplay) gameName.innerHTML = 'MOOMOO.io';
             
@@ -867,8 +867,8 @@ C = Added patches
 
                     // Check if this is the object we are looking for and trigger the callback.
                     // We check for the function's existence to be more certain.
-                    if ((propName === "initialBufferSize" && typeof this.encode === 'function') ||
-                        (propName === "maxExtLength" && typeof this.decode === 'function')) {
+                    const isFoundCodec = (targetPropName, codecOperation) => propName === targetPropName && typeof codecOperation === 'function';
+                    if (isFoundCodec("initialBufferSize", this.encode) && isFoundCodec("maxExtLength", this.decode)) {
                         Logger.log(`Hook successful for "${propName}". Object found.`, "color: #4CAF50;");
                         onFound(this);
                     }
@@ -948,9 +948,9 @@ C = Added patches
             const onCodecFoundByHook = () => {
                 codecsFoundByHook++;
                 if (codecsFoundByHook === 2) {
+                    Logger.log("Both msgpack codecs found via prototype hooks.", "color: #4CAF50;");
                     clearTimeout(this.state.manualScanTimeoutId); // Success! Clear the fallback timer.
                     this.state.codecsReady = true;
-                    Logger.log("Both msgpack codecs found via prototype hooks.", "color: #4CAF50;");
                     this.attemptFinalSetup();
                 }
             };
@@ -1015,8 +1015,11 @@ C = Added patches
         init() {
             Logger.log("--- MOOMOO.IO Utility Mod Initializing ---", "color: #ffb700; font-weight: bold;");
 
-            this.data.initialize();
+            // Set up hooks to intercept codecs and WebSocket
             this.initializeHooks();
+
+            // Initialize item data and lookups
+            this.data.initialize();
 
             // Inject styles immediately, as document.head is available early.
             this.injectCSS();
@@ -1024,6 +1027,7 @@ C = Added patches
             // Wait for the body to load before trying to modify its elements.
             this.updateGameTitleScreen();
 
+            // Initialize all registered minimods
             this.miniMods.forEach(mod => {
                 if (typeof mod.init === 'function') {
                     Logger.log(`Initializing minimod: ${mod.name || 'Unnamed Mod'}`);
@@ -2003,19 +2007,28 @@ C = Added patches
 
         // --- RATE LIMIT & QUEUE MANAGEMENT ---
 
-        /** Starts the interval that processes the message queue. */
+        /**
+         * Starts the interval that processes the message queue.
+         * @returns {void}
+         */
         startQueueProcessor() {
             if (this.state.queueProcessorIntervalId) return;
             this.state.queueProcessorIntervalId = setInterval(this.processMessageQueue.bind(this), this.config.QUEUE_PROCESSOR_INTERVAL);
         },
 
-        /** Adds a user's message to the front of the queue to be sent. */
+        /**
+         * Adds a user message to the front of the queue.
+         * @param {string} message The user's chat message to send.
+         */
         queueUserMessage(message) {
             Logger.log(`Queueing user message: "${message}"`);
             this.state.messageQueue.unshift({ type: 'user', content: message });
         },
         
-        /** Adds a system message (like the indicator) to the back of the queue. */
+        /**
+         * Adds a system message (like the indicator) to the back of the queue.
+         * @param {string} message The system message content (e.g; "Hey Bob!" or ".."). 
+         */
         queueSystemMessage(message) {
             // Optimization: Don't queue up a ton of indicator dots. 
             // If the last message in the queue is also an indicator, replace it.
@@ -2078,11 +2091,13 @@ C = Added patches
 
         // --- MINI-MOD LIFECYCLE & HOOKS ---
 
+        /** Called when the minimod is registered. Sets up event listeners. */
         init() {
             // This is where you could load settings from localStorage if you had them
             this.addEventListeners();
         },
 
+        /** Sets up key event listeners for starting/stopping healing. */
         addEventListeners() {
             document.addEventListener('keydown', this.handleKeyDown.bind(this));
             document.addEventListener('keyup', this.handleKeyUp.bind(this));
@@ -2090,6 +2105,7 @@ C = Added patches
 
         // --- EVENT HANDLERS ---
 
+        /** Handles keydown events to start healing when the heal key is pressed. */
         handleKeyDown(event) {
             if (this._isInputFocused() || event.key.toUpperCase() !== this.config.HEAL_KEY) return;
             
@@ -2099,6 +2115,7 @@ C = Added patches
             }
         },
 
+        /** Handles keyup events to stop healing when the heal key is released. */
         handleKeyUp(event) {
             if (event.key.toUpperCase() === this.config.HEAL_KEY) {
                 this.state.isHealKeyHeld = false;
@@ -2108,6 +2125,7 @@ C = Added patches
 
         // --- CORE LOGIC ---
 
+        /** Starts the healing interval if not already running. */
         startHealing() {
             if (this.state.healIntervalId) return; // Already healing
 
@@ -2117,6 +2135,7 @@ C = Added patches
             this.state.healIntervalId = setInterval(this.attemptHeal.bind(this), this.config.HEAL_INTERVAL);
         },
 
+        /** Stops the healing interval. */
         stopHealing() {
             if (this.state.healIntervalId) {
                 Logger.log("Stopping Assisted Heal.", "color: #ff1744;");
@@ -2125,6 +2144,7 @@ C = Added patches
             }
         },
 
+        /** Attempts to use a food item from the action bar to heal the player. */
         attemptHeal() {
             const C = this.core.data.constants;
 
@@ -2150,6 +2170,7 @@ C = Added patches
 
         // --- HELPER FUNCTIONS ---
 
+        /** Checks if any input fields or menus are currently focused/visible. */
         _isInputFocused() {
             const C = this.core.data.constants;
             const isVisible = (id) => {
