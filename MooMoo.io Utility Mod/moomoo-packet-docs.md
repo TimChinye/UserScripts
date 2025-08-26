@@ -36,6 +36,13 @@ Packets sent from the server to the client.
 
 Packets related to the WebSocket connection state and player session initialization.
 
+### `io-init`
+-   **Name**: Initial Connection
+-   **Description**: The first packet sent from the server to confirm a successful connection. It provides the client's unique `socketID` for the session.
+-   **Payload**: `[socketID: string]`
+-   **Example**: `["io-init", ["iO8Ddwntku"]]`
+-   **Frequency**: Once, at the beginning of a session.
+
 #### `B`
 -   **Name**: Disconnect
 -   **Description**: Notifies the client that they have been disconnected from the server.

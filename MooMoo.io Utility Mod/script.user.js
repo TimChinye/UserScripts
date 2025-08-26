@@ -4,7 +4,7 @@
 // @description  This mod adds a number of mini-mods to enhance your MooMoo.io experience whilst not being too unfair to non-script users.
 // @license      GNU GPLv3 with the condition: no auto-heal or instant kill features may be added to the licensed material.
 // @author       TigerYT
-// @version      0.7.8
+// @version      0.8.0
 // @grant        none
 // @match        *://moomoo.io/*
 // @match        *://dev.moomoo.io/*
@@ -131,7 +131,8 @@ C = Added patches
                 PACKET_TYPES: {
                     USE_ITEM: 'F',
                     EQUIP_ITEM: 'z',
-                    EQUIP_WEARABLE: 'c'
+                    EQUIP_WEARABLE: 'c',
+                    CHAT: '6'
                 },
                 PACKET_DATA: {
                     WEARABLE_TYPES: {
@@ -188,11 +189,6 @@ C = Added patches
                 CSS: {
                     DISPLAY_NONE: 'none',
                     DISPLAY_BLOCK: 'block',
-                    FILTER_Equippable: 'grayscale(0) brightness(1)',
-                    FILTER_Unequippable: 'grayscale(1) brightness(0.75)',
-                    BORDER_NONE: 'none',
-                    SELECTION_BORDER_STYLE: '2px solid white',
-                    STORE_MENU_TRANSFORM: 'translateY(0px)',
                 },
                 GAME_STATE: {
                     INITIAL_SELECTED_ITEM_INDEX: 0,
@@ -271,6 +267,7 @@ C = Added patches
 
             /** @property {object} _packetNames - Maps packet ID codes to human-readable names for logging. */
             _packetNames: {
+                'io-init': 'Initial Connection',
                 'A': 'All Clans List',
                 'B': 'Disconnect',
                 'C': 'Setup Game',
@@ -306,11 +303,12 @@ C = Added patches
                 '6': 'Receive Chat',
                 '7': 'Update Minimap',
                 '8': 'Show Text',
-                '9': 'Ping Map'
+                '9': 'Ping Map',
             },
 
             /** @property {object} _packetFormatters - Maps packet IDs to functions that format raw packet data into structured objects for easier use and logging. */
             _packetFormatters: {
+                'io-init': ([socketID]) => ({ socketID }),
                 'A': ([data]) => data,
                 'B': ([reason]) => ({ reason }),
                 'C': ([yourSID]) => ({ yourSID }),
@@ -366,7 +364,15 @@ C = Added patches
                     for (let i = 0; i < data.length; i += 2) members.push({ sid: data[i], name: data[i+1] });
                     return { members };
                 },
-                '5': ([itemType, itemID, action]) => ({ itemType: itemType === 0 ? this.data.constants.PACKET_DATA.WEARABLE_TYPES.HAT : this.data.constants.PACKET_DATA.WEARABLE_TYPES.ACCESSORY, itemID, action: action === 0 ? this.data.constants.PACKET_DATA.STORE_ACTIONS.ADD_ITEM : this.data.constants.PACKET_DATA.STORE_ACTIONS.UPDATE_EQUIPPED }),
+                '5': ([action, itemID, itemType]) => {
+                    const CoreC = window.MooMooUtilityMod.data.constants;
+                    console.log("Wearables Toolbar: Received wearable packet", itemType, itemID, action);
+                    return ({
+                        itemType: itemType === 0 ? CoreC.PACKET_DATA.WEARABLE_TYPES.HAT : CoreC.PACKET_DATA.WEARABLE_TYPES.ACCESSORY,
+                        itemID,
+                        action: action === 0 ? CoreC.PACKET_DATA.STORE_ACTIONS.ADD_ITEM : CoreC.PACKET_DATA.STORE_ACTIONS.UPDATE_EQUIPPED
+                    });
+                },
                 '6': ([sid, message]) => ({ sid, message }),
                 '7': (data) => ({ minimapData: data }),
                 '8': ([x, y, value, type]) => ({ x, y, value, type }),
@@ -379,18 +385,18 @@ C = Added patches
              * @function
              */
             initialize() {
-                const C = this.constants;
+                const CoreC = this.constants;
                 const itemTypes = {
-                    FOOD:              { slot: 0, itemType: C.ITEM_TYPES.FOOD },
-                    WALLS:             { slot: 1, itemType: C.ITEM_TYPES.WALL },
-                    SPIKES:            { slot: 2, itemType: C.ITEM_TYPES.SPIKE },
-                    WINDMILLS:         { slot: 3, itemType: C.ITEM_TYPES.WINDMILL },
-                    FARMS:             { slot: 6, itemType: C.ITEM_TYPES.FARM },
-                    TRAPS:             { slot: 4, itemType: C.ITEM_TYPES.TRAP },
-                    EXTRAS:            { slot: 5, itemType: C.ITEM_TYPES.EXTRA },
-                    SPAWN_PADS:        { slot: 7, itemType: C.ITEM_TYPES.SPAWN_PAD },
-                    PRIMARY_WEAPONS:   { slot: 8, itemType: C.ITEM_TYPES.PRIMARY_WEAPON },
-                    SECONDARY_WEAPONS: { slot: 9, itemType: C.ITEM_TYPES.SECONDARY_WEAPON },
+                    FOOD:              { slot: 0, itemType: CoreC.ITEM_TYPES.FOOD },
+                    WALLS:             { slot: 1, itemType: CoreC.ITEM_TYPES.WALL },
+                    SPIKES:            { slot: 2, itemType: CoreC.ITEM_TYPES.SPIKE },
+                    WINDMILLS:         { slot: 3, itemType: CoreC.ITEM_TYPES.WINDMILL },
+                    FARMS:             { slot: 6, itemType: CoreC.ITEM_TYPES.FARM },
+                    TRAPS:             { slot: 4, itemType: CoreC.ITEM_TYPES.TRAP },
+                    EXTRAS:            { slot: 5, itemType: CoreC.ITEM_TYPES.EXTRA },
+                    SPAWN_PADS:        { slot: 7, itemType: CoreC.ITEM_TYPES.SPAWN_PAD },
+                    PRIMARY_WEAPONS:   { slot: 8, itemType: CoreC.ITEM_TYPES.PRIMARY_WEAPON },
+                    SECONDARY_WEAPONS: { slot: 9, itemType: CoreC.ITEM_TYPES.SECONDARY_WEAPON },
                 };
 
                 for (const category in this._rawItems) {
@@ -530,6 +536,23 @@ C = Added patches
             });
         },
 
+        /**
+         * Returns a Promise that resolves on the next animation frame.
+         * A helper for ensuring DOM updates are painted.
+         */
+        waitTillNextFrame() {
+            return new Promise(resolve => requestAnimationFrame(resolve));
+        },
+
+        /**
+         * Returns a Promise that resolves after a specified delay.
+         * @param {number} ms - The delay in milliseconds.
+         * @returns {Promise<void>} A promise that resolves after the delay.
+         */
+        wait(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        },
+
         // --- CORE INTERNAL FUNCTIONS ---
 
         /**
@@ -540,8 +563,10 @@ C = Added patches
          * @param {any[]} data - The payload/data for the packet, typically an array of arguments.
          */
         sendGamePacket(type, data) {
+
+            const CoreC = this.data.constants;
             try {
-                if (this.state.gameSocket && this.state.gameSocket.readyState === this.data.constants.GAME_STATE.WEBSOCKET_STATE_OPEN) {
+                if (this.state.gameSocket && this.state.gameSocket.readyState === CoreC.GAME_STATE.WEBSOCKET_STATE_OPEN) {
                     this.state.gameSocket.send(this.state.gameEncoder.encode([type, data]));
                 }
             } catch (err) {
@@ -575,6 +600,21 @@ C = Added patches
 
                         break;
                     }
+
+                    case 'Server Shutdown Notice': {
+                        const { countdown } = packetData;
+                                        
+                        if (countdown < 0) return;
+                    
+                        var minutes = Math.floor(countdown / 60);
+                        var seconds = countdown % 60;
+                        seconds = ("0" + seconds).slice(-2);
+                    
+                        shutdownDisplay.innerText = "Server restarting in " + minutes + ":" + seconds;
+                        shutdownDisplay.hidden = false;
+
+                        break;
+                    }
                 }
 
                 if (this.config.DEBUG_MODE) {
@@ -605,7 +645,9 @@ C = Added patches
                     const dataString = Object.keys(packetData).length > 0 ? JSON.stringify(packetData) : '{}';
                     Logger.log(`Packet: ${packetName} (${packetID}) -> ${dataString}`, args);
                 }
-            } catch (e) { /* Ignore decoding errors for packets we don't care about */ }
+            } catch (e) { /* Ignore decoding errors for packets we don't care about */
+                if (this.config.DEBUG_MODE) Logger.error("Failed to decode packet:", event, e);
+            }
         },
 
         // --- INITIALIZATION & HOOKING ---
@@ -614,6 +656,7 @@ C = Added patches
          * Collects CSS from the core mod and all registered mini-mods and injects it into a single style tag.
          */
         injectCSS() {
+            const CoreC = this.data.constants;
             const allCSS = [];
 
             // Add core CSS
@@ -634,7 +677,7 @@ C = Added patches
 
             if (allCSS.length > 0) {
                 const style = document.createElement('style');
-                style.id = this.data.constants.DOM.UTILITY_MOD_STYLES;
+                style.id = CoreC.DOM.UTILITY_MOD_STYLES;
                 style.textContent = allCSS.join('\n\n/* --- CSS Separator --- */\n\n');
                 document.head.append(style);
                 Logger.log(`Injected CSS from core and ${this.miniMods.filter(m => typeof m.applyCSS === 'function' && m.applyCSS().trim()).length} mini-mod(s).`, "color: #4CAF50;");
@@ -728,31 +771,9 @@ C = Added patches
             gameCanvas.style.display = isGameplay ? 'block' : 'none';
             gameUI.style.display = isGameplay ? 'block' : 'none';
             document.body.style.backgroundImage = isError ? 'url("https://tinyurl.com/MooMooBackground")' : '';
+            if (isError && loadingInfo) loadingText.childNodes[0].nodeValue = `Re-attempting Connection...`;
             if (isGameplay) utilityModStyles.remove();
             if (isGameplay) gameName.innerHTML = 'MOOMOO.io';
-            
-            // Update content and styles specific to the error state
-            if (loadingInfo) {
-                loadingInfo.style.display = isError ? 'block' : 'none';
-                if (isError) loadingText.childNodes[0].nodeValue = `Re-attempting Connection...`;
-            }
-        },
-
-        /**
-         * Returns a Promise that resolves on the next animation frame.
-         * A helper for ensuring DOM updates are painted.
-         */
-        _nextFrame() {
-            return new Promise(resolve => requestAnimationFrame(resolve));
-        },
-
-        /**
-         * Returns a Promise that resolves after a specified delay.
-         * @param {number} ms - The delay in milliseconds.
-         * @returns {Promise<void>} A promise that resolves after the delay.
-         */
-        _wait(ms) {
-            return new Promise(resolve => setTimeout(resolve, ms));
         },
 
         /**
@@ -760,8 +781,9 @@ C = Added patches
          * @returns {Promise<void>} A promise that resolves when the game ui is visible.
          */
         _waitForGameUIToShow() {
+            const CoreC = this.data.constants;
             return new Promise(resolve => {
-                const gameUI = document.getElementById(this.data.constants.DOM.GAME_UI);
+                const gameUI = document.getElementById(CoreC.DOM.GAME_UI);
                 if (gameUI.style.display === 'block') {
                     // If menu is already hidden, the user has clicked 'enterGame', resolve and revert immediately.
                     return resolve();
@@ -786,31 +808,29 @@ C = Added patches
          * user to try to enter the game, then displays a message and prompts for a reload.
          */
         async handleHookFailureAndReload() {
-            // Wait for the user to start the game.
             await this._waitForGameUIToShow();
-
-            // Log the error and switch the UI to a loading/error state.
-            Logger.error("Failed to intercept codecs before WebSocket creation. The script cannot function. Reloading...");
+            Logger.error("All hooking methods failed. The script cannot function. Reloading...");
             this._setUIState('showError');
-
-            // Give the user time to read the message.
-            await this._wait(5000);
-
-            // Add the cancellation message and ensure it's painted before the prompt.
+            await this.wait(5000);
             const loadingInfo = document.getElementById(this.data.constants.DOM.LOADING_INFO);
             if (loadingInfo) {
-                const cancellationMsg = "If you cancel, you can play the game as normal - without the mod enabled.";
-                loadingInfo.append(cancellationMsg);
+                loadingInfo.append("If you cancel, you can play the game as normal - without the mod enabled.");
+
+                const loadingText = document.getElementById(this.data.constants.DOM.LOADING_TEXT);
+                const syncDisplayCallback = () => {
+                    const newDisplayStyle = window.getComputedStyle(loadingText).display;
+                    if (loadingInfo.style.display !== newDisplayStyle) {
+                        loadingInfo.style.display = newDisplayStyle;
+                    }
+                };
+                const observer = new MutationObserver(syncDisplayCallback);
+                syncDisplayCallback();
+                observer.observe(loadingText, { attributes: true, attributeFilter: ['style'] });
+
+                await this.waitTillNextFrame();
+                await this.waitTillNextFrame();
             }
-
-            await this._nextFrame(); // Wait for the browser to acknowledge the DOM change and be ready to paint it
-            await this._nextFrame(); // Wait for that paint to have actually happened by scheduling on the *next* frame
-
-            // Trigger the reload prompt.
             window.location.reload();
-
-            // If the user cancels, this timeout runs, reverting the UI to gameplay mode.
-            // The arrow function correctly preserves the `this` context.
             setTimeout(() => this._setUIState('showGameplay'), 0);
         },
 
@@ -820,24 +840,32 @@ C = Added patches
          * we don't try to attach listeners prematurely.
          */
         attemptFinalSetup() {
-            // Do nothing if we're not ready yet, or if we've already done this.
-            if (this.state.isListenerActive || !this.state.codecsReady || !this.state.socketReady) {
-                return;
-            }
-
-            // Both components are confirmed ready. Let's go!
+            if (this.state.isListenerActive || !this.state.codecsReady || !this.state.socketReady) return;
             this.state.isListenerActive = true;
             Logger.log("Codecs and WebSocket are ready. Attaching all listeners.", "color: #ffb700;");
-
-            // Attach the core packet handler to the captured WebSocket instance
             this.state.gameSocket.addEventListener('message', this.handleSocketMessage.bind(this));
-
-            // Attach all minimod-specific event listeners (e.g., wheel, keydown)
             this.miniMods.forEach(mod => {
-                if (typeof mod.addEventListeners === 'function') {
-                    mod.addEventListeners();
-                }
+                if (typeof mod.addEventListeners === 'function') mod.addEventListeners();
             });
+        },
+
+        /**
+         * Called when script interception is successful.
+         */
+        onCodecsIntercepted(encoder, decoder) {
+            Logger.log("Codec interception successful!", "color: #4CAF50; font-weight: bold;");
+            this.state.gameEncoder = encoder;
+            this.state.gameDecoder = decoder;
+            this.state.codecsReady = true;
+            this.attemptFinalSetup();
+        },
+
+        /**
+         * Called when script interception fails, triggering fallback methods.
+         */
+        onCodecsFailed() {
+            Logger.warn("Script interception failed. Reverting to fallback hook methods.");
+            this.initializeHooks();
         },
 
         /**
@@ -937,61 +965,115 @@ C = Added patches
         },
 
         /**
-         * Sets up all necessary hooks to integrate with the game's internal objects and network traffic.
-         * This new logic correctly handles the asynchronous nature of finding codecs and capturing the WebSocket.
+         * The original, less reliable hooking method, now used as a fallback.
          */
         initializeHooks() {
             const CoreC = this.data.constants;
-
-            // Hook 1: Find msgpack codecs via prototype mutation (the fast, preferred path)
             let codecsFoundByHook = 0;
             const onCodecFoundByHook = () => {
                 codecsFoundByHook++;
                 if (codecsFoundByHook === 2) {
                     Logger.log("Both msgpack codecs found via prototype hooks.", "color: #4CAF50;");
-                    clearTimeout(this.state.manualScanTimeoutId); // Success! Clear the fallback timer.
+                    clearTimeout(this.state.manualScanTimeoutId);
                     this.state.codecsReady = true;
                     this.attemptFinalSetup();
                 }
             };
-
             this.hookIntoPrototype("initialBufferSize", (obj) => { this.state.gameEncoder = obj; onCodecFoundByHook(); });
             this.hookIntoPrototype("maxExtLength", (obj) => { this.state.gameDecoder = obj; onCodecFoundByHook(); });
 
-
-            // Hook 2: Intercept WebSocket creation to get a reference to the game's socket instance.
-            const originalWebSocket = window.WebSocket;
-            window.WebSocket = new Proxy(originalWebSocket, {
-                construct: (target, args) => {
-                    // CRITICAL CHECK: If the game tries to connect before we have the codecs, it's too late.
-                    if (!this.state.gameEncoder || !this.state.gameDecoder) {
-                        this.handleHookFailureAndReload();
-                        // Although the page will reload, we return a dummy object to prevent further errors.
-                        return new target(...args);
-                    }
-
-                    const wsInstance = new target(...args);
-                    this.state.gameSocket = wsInstance;
-                    this.state.socketReady = true;
-                    Logger.log("Game WebSocket instance captured.");
-
-                    // Now that the socket is ready, try to complete the setup.
-                    this.attemptFinalSetup();
-
-                    // Restore the original WebSocket constructor immediately.
-                    window.WebSocket = originalWebSocket;
-                    return wsInstance;
-                }
-            });
-
-
-            // Fallback Trigger: If the prototype hooks haven't found the codecs after a delay,
-            // assume they failed and initiate the manual scan.
             this.state.manualScanTimeoutId = setTimeout(() => {
                 if (!this.state.codecsReady) {
                     this.findCodecsManually(this.attemptFinalSetup.bind(this));
                 }
             }, CoreC.TIMEOUTS.MANUAL_CODEC_SCAN);
+        },
+
+        /**
+         * The new, primary method for capturing codecs by intercepting the game script.
+         */
+        interceptGameScript() {
+            Logger.log("Attempting to intercept and modify the game script...");
+
+            const SCRIPT_SELECTOR = "/assets/index-eb87bff7.js";
+            const ENCODER_REGEX = /(this\.initialBufferSize=\w,)/;
+            const ENCODER_INJECTION = `$1 console.log("[Util-Mod] ✅ CAPTURED ENCODER!"), window.gameEncoder = this,`;
+            const DECODER_REGEX = /(this\.maxStrLength=\w,)/;
+            const DECODER_INJECTION = `$1 console.log("[Util-Mod] ✅ CAPTURED DECODER!"), window.gameDecoder = this,`;
+
+            const openBackdoor = (withinObserver) => {
+                const targetScript = document.querySelector(`script[src*="${SCRIPT_SELECTOR}"]`);
+                if (targetScript) {
+                    if (withinObserver) obs.disconnect();
+                    
+                    Logger.log(`Found game script: ${targetScript.src}`);
+                    targetScript.type = 'text/plain'; // Neutralize the original script
+                    targetScript.remove();
+
+                    fetch(targetScript.src).then(res => res.text())
+                    .then(scriptText => {
+                        let modifiedScript = scriptText
+                            .replace(ENCODER_REGEX, ENCODER_INJECTION)
+                            .replace(DECODER_REGEX, DECODER_INJECTION);
+
+                        if (!modifiedScript.includes("window.gameEncoder") || !modifiedScript.includes("window.gameDecoder")) {
+                            Logger.error("Script injection failed! Regex patterns did not match.");
+                            this.onCodecsFailed();
+                            return;
+                        }
+
+                        const newScript = document.createElement('script');
+                        newScript.textContent = modifiedScript;
+                        document.addEventListener('DOMContentLoaded', () => document.head.append(newScript));
+                        Logger.log("Modified game script injected.", "color: #4CAF50;");
+
+                        // Verify capture and finalize setup
+                        setTimeout(() => {
+                            if (window.gameEncoder && window.gameDecoder) {
+                                this.onCodecsIntercepted(window.gameEncoder, window.gameDecoder);
+                            } else {
+                                Logger.error("Codecs were not found on window after injection.");
+                                this.onCodecsFailed();
+                            }
+                        }, 100);
+                    })
+                    .catch(err => {
+                        Logger.error("Failed to fetch or process game script:", err);
+                        this.onCodecsFailed();
+                    });
+                } else { /* Fail silently */ };
+            }
+
+            openBackdoor(false);
+
+            const observer = new MutationObserver((mutations, obs) => openBackdoor(true));
+            observer.observe(document.documentElement, { childList: true, subtree: true });
+        },
+
+        /**
+         * Sets up the WebSocket proxy to capture the game's connection instance.
+         */
+        setupWebSocketProxy() {
+            const originalWebSocket = window.WebSocket;
+            window.WebSocket = new Proxy(originalWebSocket, {
+                construct: (target, args) => {
+                    const wsInstance = new target(...args);
+
+                    if (!this.state.gameEncoder || !this.state.gameDecoder) {
+                         // A final check. If by the time the WS is created NO method has worked, fail.
+                        this.handleHookFailureAndReload();
+                        return wsInstance;
+                    }
+
+                    this.state.gameSocket = wsInstance;
+                    this.state.socketReady = true;
+                    
+                    Logger.log("Game WebSocket instance captured.");
+                    window.WebSocket = originalWebSocket; // Restore immediately
+                    this.attemptFinalSetup();
+                    return wsInstance;
+                }
+            });
         },
 
         /**
@@ -1004,6 +1086,9 @@ C = Added patches
                 this.miniMods.forEach(mod => {
                     if (typeof mod.onGameReady === 'function') mod.onGameReady();
                 });
+
+                const shutdownDisplay = document.getElementById('shutdownDisplay');
+                if (shutdownDisplay) shutdownDisplay.hidden = false;
             } catch(e) {
                 Logger.error("Failed during onGameReady setup.", e);
             }
@@ -1016,7 +1101,14 @@ C = Added patches
             Logger.log("--- MOOMOO.IO Utility Mod Initializing ---", "color: #ffb700; font-weight: bold;");
 
             // Set up hooks to intercept codecs and WebSocket
-            this.initializeHooks();
+            // this.initializeHooks();
+
+            // This is now the primary hooking mechanism.
+            //Set up hooks to intercept codecs or modifying the game script directly to open a backdoor.
+            this.interceptGameScript();
+
+            // Set up WebSocket proxy to capture the game's WebSocket instance.
+            this.setupWebSocketProxy();
 
             // Initialize item data and lookups
             this.data.initialize();
@@ -1079,6 +1171,12 @@ C = Added patches
             HOTKEYS: {
                 USE_FOOD: 'Q',
             },
+            CSS: {
+                FILTER_EQUIPPABLE: 'grayscale(0) brightness(1)',
+                FILTER_UNEQUIPPABLE: 'grayscale(1) brightness(0.75)',
+                BORDER_NONE: 'none',
+                SELECTION_BORDER_STYLE: '2px solid white',
+            },
         },
 
         /** @property {object} state - Dynamic state for this minimod. */
@@ -1139,6 +1237,11 @@ C = Added patches
                     }
                     break;
                 }
+
+                case 'Update Upgrades': {
+                    this.refreshEquippableState();
+                    break;
+                }
             }
         },
 
@@ -1146,23 +1249,23 @@ C = Added patches
          * Adds necessary event listeners to the document and action bar for inventory interaction.
          */
         addEventListeners() {
-            const C = this.core.data.constants;
+            const CoreC = this.core.data.constants;
             document.addEventListener('wheel', this.handleInventoryScroll.bind(this), { passive: false });
             document.addEventListener('keydown', this.handleKeyPress.bind(this));
-            document.getElementById(C.DOM.ACTION_BAR).addEventListener('click', this.handleItemClick.bind(this));
+            document.getElementById(CoreC.DOM.ACTION_BAR).addEventListener('click', this.handleItemClick.bind(this));
         },
 
         /**
          * Called when the game is ready. Selects the initial weapon and sets up UI observers.
          */
         onGameReady() {
-            const C = this.core.data.constants;
+            const CoreC = this.core.data.constants;
 
             // Wait for Game UI to load before proceeding
-            const gameUI = document.getElementById(C.DOM.GAME_UI);
+            const gameUI = document.getElementById(CoreC.DOM.GAME_UI);
             this.core.waitForVisible(gameUI).then(() => {
                 // --- Scrape initial state from the DOM ---
-                const resElements = document.getElementById(C.DOM.RESOURCE_DISPLAY).children;
+                const resElements = document.getElementById(CoreC.DOM.RESOURCE_DISPLAY).children;
                 this.core.state.playerResources = {
                     food: parseInt(resElements[0].textContent) || 0,
                     wood: parseInt(resElements[1].textContent) || 0,
@@ -1171,7 +1274,7 @@ C = Added patches
                 };
 
                 // --- Perform initial actions ---
-                this.selectItemByIndex(C.GAME_STATE.INITIAL_SELECTED_ITEM_INDEX);
+                this.selectItemByIndex(CoreC.GAME_STATE.INITIAL_SELECTED_ITEM_INDEX);
             });
         },
 
@@ -1182,13 +1285,13 @@ C = Added patches
          * @param {WheelEvent} event - The DOM wheel event.
          */
         handleInventoryScroll(event) {
-            const C = this.core.data.constants;
-            if (this._isInputFocused() || !this.core.state.gameSocket || this.core.state.gameSocket.readyState !== C.GAME_STATE.WEBSOCKET_STATE_OPEN) return;
+            const CoreC = this.core.data.constants;
+            if (this._isInputFocused() || !this.core.state.gameSocket || this.core.state.gameSocket.readyState !== CoreC.GAME_STATE.WEBSOCKET_STATE_OPEN) return;
 
             event.preventDefault();
 
             // Determine scroll direction and send to refresh selection UI function.
-            const scrollDirection = event.deltaY > 0 ? C.GAME_STATE.SCROLL_DOWN : C.GAME_STATE.SCROLL_UP;
+            const scrollDirection = event.deltaY > 0 ? CoreC.GAME_STATE.SCROLL_DOWN : CoreC.GAME_STATE.SCROLL_UP;
             this.refreshEquippableState(scrollDirection);
         },
 
@@ -1197,20 +1300,21 @@ C = Added patches
          * @param {KeyboardEvent} event - The DOM keyboard event.
          */
         handleKeyPress(event) {
+            const CoreC = this.core.data.constants;
+            const LocalC = this.constants;
+
             if (this._isInputFocused()) return;
 
-            const C = this.core.data.constants;
             const pressedKey = event.key.toUpperCase();
-
-            const actionBar = document.getElementById(C.DOM.ACTION_BAR);
+            const actionBar = document.getElementById(CoreC.DOM.ACTION_BAR);
             if (!actionBar) return;
 
             const availableItems = Array.from(actionBar.children).filter(el => this.core.isAvailableItem(el));
             if (availableItems.length === 0) return;
 
             const isNumericHotkey = (key) => key >= '1' && key <= '9';
-            const isFoodHotkey = (key) => key === this.constants.HOTKEYS.USE_FOOD;
-            const findFoodItem = (items) => items.find(el => this.core.getItemFromElem(el)?.itemType === C.ITEM_TYPES.FOOD);
+            const isFoodHotkey = (key) => key === LocalC.HOTKEYS.USE_FOOD;
+            const findFoodItem = (items) => items.find(el => this.core.getItemFromElem(el)?.itemType === CoreC.ITEM_TYPES.FOOD);
 
             let targetElement = null;
             if (isNumericHotkey(pressedKey)) {
@@ -1232,10 +1336,10 @@ C = Added patches
          */
         handleItemClick(event) {
             if (this._isInputFocused()) return;
-            const C = this.core.data.constants;
-            const clickedElement = event.target.closest(C.DOM.ACTION_BAR_ITEM_CLASS);
+            const CoreC = this.core.data.constants;
+            const clickedElement = event.target.closest(CoreC.DOM.ACTION_BAR_ITEM_CLASS);
             if (clickedElement && this.core.isEquippableItem(clickedElement)) {
-                const actionBar = document.getElementById(C.DOM.ACTION_BAR);
+                const actionBar = document.getElementById(CoreC.DOM.ACTION_BAR);
                 if (!actionBar) return;
                 const equippableItems = Array.from(actionBar.children).filter(el => this.core.isEquippableItem(el));
                 const newIndex = equippableItems.findIndex(el => el.id === clickedElement.id);
@@ -1250,8 +1354,8 @@ C = Added patches
          * @param {number} [scrollDirection=0] - The direction of scroll. 1 for down, -1 for up. 0 refreshes UI without changing selection.
          */
         refreshEquippableState(scrollDirection = this.core.data.constants.GAME_STATE.NO_SCROLL) {
-            const C = this.core.data.constants;
-            const actionBar = document.getElementById(C.DOM.ACTION_BAR);
+            const CoreC = this.core.data.constants;
+            const actionBar = document.getElementById(CoreC.DOM.ACTION_BAR);
             if (!actionBar) return;
 
             const equippableItems = Array.from(actionBar.children).filter(el => this.core.isEquippableItem(el));
@@ -1268,9 +1372,9 @@ C = Added patches
             // Store the last active weapon's index.
             if (equippableItems[1]) {
                 const secondEquippableItem = this.core.getItemFromElem(equippableItems[1]);
-                if (this.state.selectedItemIndex <= C.ITEM_TYPES.SECONDARY_WEAPON) {
-                    const isSingleWielder = secondEquippableItem?.itemType > C.ITEM_TYPES.SECONDARY_WEAPON;
-                    this.state.lastSelectedWeaponIndex = isSingleWielder ? C.ITEM_TYPES.PRIMARY_WEAPON : this.state.selectedItemIndex;
+                if (this.state.selectedItemIndex <= CoreC.ITEM_TYPES.SECONDARY_WEAPON) {
+                    const isSingleWielder = secondEquippableItem?.itemType > CoreC.ITEM_TYPES.SECONDARY_WEAPON;
+                    this.state.lastSelectedWeaponIndex = isSingleWielder ? CoreC.ITEM_TYPES.PRIMARY_WEAPON : this.state.selectedItemIndex;
                 }
             }
 
@@ -1278,11 +1382,11 @@ C = Added patches
             if (!selectedElement) return;
 
             // If we scrolled, send the equip packet.
-            if (scrollDirection !== C.GAME_STATE.NO_SCROLL) {
+            if (scrollDirection !== CoreC.GAME_STATE.NO_SCROLL) {
                 const itemToEquip = this.core.getItemFromElem(selectedElement);
                 if (itemToEquip) {
-                    const isWeapon = itemToEquip.itemType <= C.ITEM_TYPES.SECONDARY_WEAPON;
-                    this.core.sendGamePacket(C.PACKET_TYPES.EQUIP_ITEM, [itemToEquip.id, isWeapon]);
+                    const isWeapon = itemToEquip.itemType <= CoreC.ITEM_TYPES.SECONDARY_WEAPON;
+                    this.core.sendGamePacket(CoreC.PACKET_TYPES.EQUIP_ITEM, [itemToEquip.id, isWeapon]);
                 }
             }
 
@@ -1294,15 +1398,15 @@ C = Added patches
          * @param {number} newIndex - The index of the item to select in the list of currently equippable items.
          */
         selectItemByIndex(newIndex) {
-            const C = this.core.data.constants;
-            const actionBar = document.getElementById(C.DOM.ACTION_BAR);
+            const CoreC = this.core.data.constants;
+            const actionBar = document.getElementById(CoreC.DOM.ACTION_BAR);
             if (!actionBar) return;
 
             const equippableItems = Array.from(actionBar.children).filter(el => this.core.isEquippableItem(el));
             if (newIndex < 0 || newIndex >= equippableItems.length) return;
 
             this.state.selectedItemIndex = newIndex;
-            this.refreshEquippableState(C.GAME_STATE.NO_SCROLL);
+            this.refreshEquippableState(CoreC.GAME_STATE.NO_SCROLL);
         },
 
         // --- UI & HELPER FUNCTIONS ---
@@ -1312,14 +1416,16 @@ C = Added patches
          * @param {HTMLElement|null} selectedItem - The element to highlight as selected.
          */
         updateSelectionUI(selectedItem) {
-            const C = this.core.data.constants;
-            const actionBar = document.getElementById(C.DOM.ACTION_BAR);
+            const CoreC = this.core.data.constants;
+            const LocalC = this.constants;
+
+            const actionBar = document.getElementById(CoreC.DOM.ACTION_BAR);
             if (!actionBar) return;
 
             const allItems = Array.from(actionBar.children);
             allItems.forEach(item => {
-                item.style.border = item === selectedItem ? C.CSS.SELECTION_BORDER_STYLE : C.CSS.BORDER_NONE;
-                item.style.filter = this.core.isEquippableItem(item) ? C.CSS.FILTER_Equippable : C.CSS.FILTER_Unequippable;
+                item.style.border = item === selectedItem ? LocalC.CSS.SELECTION_BORDER_STYLE : LocalC.CSS.BORDER_NONE;
+                item.style.filter = this.core.isEquippableItem(item) ? LocalC.CSS.FILTER_EQUIPPABLE : LocalC.CSS.FILTER_UNEQUIPPABLE;
             });
         },
 
@@ -1329,12 +1435,12 @@ C = Added patches
          * @returns {boolean} True if an input is focused, false otherwise.
          */
         _isInputFocused() {
-            const C = this.core.data.constants;
+            const CoreC = this.core.data.constants;
             const isVisible = (id) => {
                 const elem = document.getElementById(id);
-                return elem && elem.style.display === C.CSS.DISPLAY_BLOCK;
+                return elem && elem.style.display === CoreC.CSS.DISPLAY_BLOCK;
             };
-            return isVisible(C.DOM.CHAT_HOLDER) || isVisible(C.DOM.STORE_MENU) || isVisible(C.DOM.ALLIANCE_MENU);
+            return isVisible(CoreC.DOM.CHAT_HOLDER) || isVisible(CoreC.DOM.STORE_MENU) || isVisible(CoreC.DOM.ALLIANCE_MENU);
         },
     };
 
@@ -1381,6 +1487,7 @@ C = Added patches
             },
             CSS: {
                 DRAGGING_OPACITY: '0.5',
+                STORE_MENU_TRANSFORM: 'translateY(0px)',
             },
             REGEX: {
                 HAT_IMG: /hat_(\d+)\.png/,
@@ -1415,7 +1522,7 @@ C = Added patches
          */
         applyCSS() {
             const CoreC = this.core.data.constants;
-            const C = this.constants;
+            const LocalC = this.constants;
             return `
                 #${CoreC.DOM.STORE_MENU} {
                     top: 20px;
@@ -1438,7 +1545,7 @@ C = Added patches
                     }
                 }
 
-                .${C.DOM.PIN_BUTTON_CLASS} {
+                .${LocalC.DOM.PIN_BUTTON_CLASS} {
                     --text-color: hsl(from #80eefc calc(h + 215) s l);
                     color: var(--text-color);
                     padding-right: 5px;
@@ -1448,11 +1555,11 @@ C = Added patches
                     }
                 }
 
-                #${C.DOM.ITEM_INFO_HOLDER} {
+                #${LocalC.DOM.ITEM_INFO_HOLDER} {
                     top: calc(20px + var(--top-offset, 0px));
                 }
 
-                #${C.DOM.WEARABLES_TOOLBAR} {
+                #${LocalC.DOM.WEARABLES_TOOLBAR} {
                     position: absolute;
                     left: 20px;
                     top: 20px;
@@ -1476,14 +1583,14 @@ C = Added patches
                     }
                 }
 
-                .${C.DOM.WEARABLES_GRID_CLASS} {
+                .${LocalC.DOM.WEARABLES_GRID_CLASS} {
                     display: flex;
                     flex-wrap: wrap;
                     gap: 5px;
                     justify-content: flex-start;
                 }
 
-                .${C.DOM.WEARABLE_BUTTON_CLASS} {
+                .${LocalC.DOM.WEARABLE_BUTTON_CLASS} {
                     width: 40px;
                     height: 40px;
                     margin: 4px 0;
@@ -1501,20 +1608,18 @@ C = Added patches
                         border-color: white;
                     }
 
-                    &.${C.DOM.WEARABLE_SELECTED_CLASS} {
+                    &.${LocalC.DOM.WEARABLE_SELECTED_CLASS} {
                         background-color: #5b9c52;
                         border-color: lightgreen;
                         box-shadow: 0 0 8px lightgreen;
                     }
                 }
 
-                .${C.DOM.WEARABLE_BUTTON_CLASS}.${C.DOM.WEARABLE_DRAGGING_CLASS} {
-                    opacity: ${C.CSS.DRAGGING_OPACITY};
+                .${LocalC.DOM.WEARABLE_BUTTON_CLASS}.${LocalC.DOM.WEARABLE_DRAGGING_CLASS} {
+                    opacity: ${LocalC.CSS.DRAGGING_OPACITY};
                 }
             `
         },
-
-        // --- MINI-MOD LIFECYCLE & HOOKS ---
 
         /**
          * Handles incoming game packets related to the Store / Shop and updates the Wearables Toolbar UI.
@@ -1522,12 +1627,12 @@ C = Added patches
          * @param {object} packetData - The parsed data object from the incoming packet.
          */
         onPacket(packetName, packetData) {
+            const CoreC = this.core.data.constants;
             if (packetName === 'Update Store Items') {
                 const { itemID, itemType, action } = packetData;
-                const C = this.core.data.constants;
-                if (action === C.PACKET_DATA.STORE_ACTIONS.ADD_ITEM) {
+                if (action === CoreC.PACKET_DATA.STORE_ACTIONS.ADD_ITEM) {
                     this.addWearableButton(itemID, itemType);
-                } else if (action === C.PACKET_DATA.STORE_ACTIONS.UPDATE_EQUIPPED) {
+                } else if (action === CoreC.PACKET_DATA.STORE_ACTIONS.UPDATE_EQUIPPED) {
                     this.updateEquippedWearable(itemID, itemType);
                 }
             }
@@ -1537,9 +1642,11 @@ C = Added patches
          * Called when the game is ready. Injects the CSS and creates the UI for the wearables toolbar.
          */
         onGameReady() {
-            if (!this.core.state.playerHasRespawned && !document.getElementById(this.constants.DOM.WEARABLES_TOOLBAR)) {
+            const CoreC = this.core.data.constants;
+            const LocalC = this.constants;
+            if (!this.core.state.playerHasRespawned && !document.getElementById(LocalC.DOM.WEARABLES_TOOLBAR)) {
                 // Wait for Game UI to load before proceeding
-                const gameUI = document.getElementById(this.core.data.constants.DOM.GAME_UI);
+                const gameUI = document.getElementById(CoreC.DOM.GAME_UI);
                 this.core.waitForVisible(gameUI).then(() => {
                     this.createWearablesToolbarUI();
                     this.setupDynamicPositioning();
@@ -1554,21 +1661,21 @@ C = Added patches
          * Creates the HTML structure for the wearables toolbar and appends it to the document body.
          */
         createWearablesToolbarUI() {
-            const C = this.constants;
+            const LocalC = this.constants;
             const CoreC = this.core.data.constants;
 
             const container = document.createElement('div');
-            container.id = C.DOM.WEARABLES_TOOLBAR;
+            container.id = LocalC.DOM.WEARABLES_TOOLBAR;
             container.innerHTML = `
-                <h1>Wearables Toolbar <span>(Press '${C.HOTKEYS.TOGGLE_WEARABLES}' to toggle)</span></h1>
-                <div id="${C.DOM.WEARABLES_HATS}" class="${C.DOM.WEARABLES_GRID_CLASS}"></div>
-                <div id="${C.DOM.WEARABLES_ACCESSORIES}" class="${C.DOM.WEARABLES_GRID_CLASS}"></div>
+                <h1>Wearables Toolbar <span>(Press '${LocalC.HOTKEYS.TOGGLE_WEARABLES}' to toggle)</span></h1>
+                <div id="${LocalC.DOM.WEARABLES_HATS}" class="${LocalC.DOM.WEARABLES_GRID_CLASS}"></div>
+                <div id="${LocalC.DOM.WEARABLES_ACCESSORIES}" class="${LocalC.DOM.WEARABLES_GRID_CLASS}"></div>
             `;
             
             document.getElementById(CoreC.DOM.GAME_UI).prepend(container);
 
-            const hatsGrid = container.querySelector(`#${C.DOM.WEARABLES_HATS}`);
-            const accessoriesGrid = container.querySelector(`#${C.DOM.WEARABLES_ACCESSORIES}`);
+            const hatsGrid = container.querySelector(`#${LocalC.DOM.WEARABLES_HATS}`);
+            const accessoriesGrid = container.querySelector(`#${LocalC.DOM.WEARABLES_ACCESSORIES}`);
 
             hatsGrid.addEventListener('dragover', this.handleDragOver.bind(this));
             accessoriesGrid.addEventListener('dragover', this.handleDragOver.bind(this));
@@ -1578,7 +1685,7 @@ C = Added patches
                 const isInputFocused = visibleInputs.some(id => document.getElementById(id)?.style.display === CoreC.CSS.DISPLAY_BLOCK);
                 if (isInputFocused) return;
 
-                if (e.key.toUpperCase() === C.HOTKEYS.TOGGLE_WEARABLES) {
+                if (e.key.toUpperCase() === LocalC.HOTKEYS.TOGGLE_WEARABLES) {
                     this.state.isVisible = !this.state.isVisible;
                     container.style.display = this.state.isVisible ? CoreC.CSS.DISPLAY_BLOCK : CoreC.CSS.DISPLAY_NONE;
                 }
@@ -1590,9 +1697,9 @@ C = Added patches
          * based on the visibility and height of the item info box.
          */
         setupDynamicPositioning() {
-            const C = this.constants;
-            const toolbar = document.getElementById(C.DOM.WEARABLES_TOOLBAR);
-            const infoHolder = document.getElementById(C.DOM.ITEM_INFO_HOLDER);
+            const LocalC = this.constants;
+            const toolbar = document.getElementById(LocalC.DOM.WEARABLES_TOOLBAR);
+            const infoHolder = document.getElementById(LocalC.DOM.ITEM_INFO_HOLDER);
 
             if (!toolbar || !infoHolder) {
                 Logger.warn("Could not find toolbar or info holder for dynamic positioning.");
@@ -1627,18 +1734,19 @@ C = Added patches
         
         /** Sets up observers to dynamically resize the store menu and add pin buttons when it opens. */
         setupStoreMenuObservers() {
-            const C = this.core.data.constants;
-            const storeMenu = document.getElementById(C.DOM.STORE_MENU);
-            storeMenu.style.transform = C.CSS.STORE_MENU_TRANSFORM;
+            const CoreC = this.core.data.constants;
+            const LocalC = this.constants;
+            const storeMenu = document.getElementById(CoreC.DOM.STORE_MENU);
+            storeMenu.style.transform = LocalC.CSS.STORE_MENU_TRANSFORM;
 
-            const upgradeHolder = document.getElementById(C.DOM.UPGRADE_HOLDER);
-            const upgradeCounter = document.getElementById(C.DOM.UPGRADE_COUNTER);
+            const upgradeHolder = document.getElementById(CoreC.DOM.UPGRADE_HOLDER);
+            const upgradeCounter = document.getElementById(CoreC.DOM.UPGRADE_COUNTER);
 
             const initialCheck = () => {
-                const upgradeHolderVisible = upgradeHolder.style.display === C.CSS.DISPLAY_BLOCK;
-                const upgradeCounterVisible = upgradeCounter.style.display === C.CSS.DISPLAY_BLOCK;
+                const upgradeHolderVisible = upgradeHolder.style.display === CoreC.CSS.DISPLAY_BLOCK;
+                const upgradeCounterVisible = upgradeCounter.style.display === CoreC.CSS.DISPLAY_BLOCK;
                 const isExpanded = upgradeHolderVisible && upgradeCounterVisible;
-                storeMenu.classList.toggle(C.DOM.STORE_MENU_EXPANDED_CLASS, isExpanded);
+                storeMenu.classList.toggle(CoreC.DOM.STORE_MENU_EXPANDED_CLASS, isExpanded);
             };
 
             const upgradeObserver = new MutationObserver(initialCheck);
@@ -1648,7 +1756,7 @@ C = Added patches
 
             const storeMenuObserver = new MutationObserver((mutationsList) => {
                 for (const mutation of mutationsList) {
-                    if (storeMenu.style.display === C.CSS.DISPLAY_BLOCK && mutation.oldValue.includes(`display: ${C.CSS.DISPLAY_NONE}`)) {
+                    if (storeMenu.style.display === CoreC.CSS.DISPLAY_BLOCK && mutation.oldValue.includes(`display: ${CoreC.CSS.DISPLAY_NONE}`)) {
                         this.addPinButtons();
                     }
                 }
@@ -1656,7 +1764,7 @@ C = Added patches
             storeMenuObserver.observe(storeMenu, { attributes: true, attributeFilter: ['style'], attributeOldValue: true });
 
             const storeHolderObserver = new MutationObserver(() => this.addPinButtons());
-            storeHolderObserver.observe(document.getElementById(C.DOM.STORE_HOLDER), { childList: true });
+            storeHolderObserver.observe(document.getElementById(CoreC.DOM.STORE_HOLDER), { childList: true });
         },
         
         // --- UI MANIPULATION & STATE UPDATES ---
@@ -1664,44 +1772,44 @@ C = Added patches
         /**
          * Adds a new button for a wearable item to the appropriate grid (hats or accessories) in the toolbar.
          * @param {number} id - The server-side ID of the wearable item.
-         * @param {number} type - The type of wearable (HAT or ACCESSORY).
+         * @param {string} type - The type of wearable (HAT or ACCESSORY).
          */
         addWearableButton(id, type) {
-            const C = this.constants;
+            const LocalC = this.constants;
             const CoreC = this.core.data.constants;
-            const containerId = type === CoreC.PACKET_DATA.WEARABLE_TYPES.HAT ? C.DOM.WEARABLES_HATS : C.DOM.WEARABLES_ACCESSORIES;
+            const containerId = type === CoreC.PACKET_DATA.WEARABLE_TYPES.HAT ? LocalC.DOM.WEARABLES_HATS : LocalC.DOM.WEARABLES_ACCESSORIES;
             const container = document.getElementById(containerId);
             if (!container) return;
 
-            const buttonId = `${C.DOM.WEARABLE_BUTTON_ID_PREFIX}${type}-${id}`;
+            const buttonId = `${LocalC.DOM.WEARABLE_BUTTON_ID_PREFIX}${type}-${id}`;
             if (document.getElementById(buttonId)) return;
 
             const btn = document.createElement('div');
             btn.id = buttonId;
-            btn.className = C.DOM.WEARABLE_BUTTON_CLASS;
+            btn.className = LocalC.DOM.WEARABLE_BUTTON_CLASS;
             btn.draggable = true;
             btn.dataset.wearableId = id;
 
-            const imagePath = type === CoreC.PACKET_DATA.WEARABLE_TYPES.HAT ? C.URLS.HAT_IMG_PATH : C.URLS.ACCESSORY_IMG_PATH;
-            btn.style.backgroundImage = `url(${C.URLS.BASE_IMG}${imagePath}${id}${C.URLS.IMG_EXT})`;
+            const imagePath = type === CoreC.PACKET_DATA.WEARABLE_TYPES.HAT ? LocalC.URLS.HAT_IMG_PATH : LocalC.URLS.ACCESSORY_IMG_PATH;
+            btn.style.backgroundImage = `url(${LocalC.URLS.BASE_IMG}${imagePath}${id}${LocalC.URLS.IMG_EXT})`;
             btn.title = `Item ID: ${id}`;
 
             btn.addEventListener('dragstart', () => {
                 this.state.draggedItem = btn;
-                setTimeout(() => btn.classList.add(C.DOM.WEARABLE_DRAGGING_CLASS), C.TIMEOUTS.DRAG_AND_DROP_VISIBILITY);
+                setTimeout(() => btn.classList.add(LocalC.DOM.WEARABLE_DRAGGING_CLASS), LocalC.TIMEOUTS.DRAG_AND_DROP_VISIBILITY);
             });
 
             btn.addEventListener('dragend', () => {
                 setTimeout(() => {
-                    if (this.state.draggedItem) this.state.draggedItem.classList.remove(C.DOM.WEARABLE_DRAGGING_CLASS);
+                    if (this.state.draggedItem) this.state.draggedItem.classList.remove(LocalC.DOM.WEARABLE_DRAGGING_CLASS);
                     this.state.draggedItem = null;
-                }, C.TIMEOUTS.DRAG_AND_DROP_VISIBILITY);
+                }, LocalC.TIMEOUTS.DRAG_AND_DROP_VISIBILITY);
             });
 
             btn.addEventListener('click', () => {
-                const isCurrentlySelected = btn.classList.contains(C.DOM.WEARABLE_SELECTED_CLASS);
+                const isCurrentlySelected = btn.classList.contains(LocalC.DOM.WEARABLE_SELECTED_CLASS);
                 const newItemId = isCurrentlySelected ? 0 : id;
-                this.core.sendGamePacket(CoreC.PACKET_TYPES.EQUIP_WEARABLE, [0, newItemId, type]);
+                this.core.sendGamePacket(CoreC.PACKET_TYPES.EQUIP_WEARABLE, [0, newItemId, type === CoreC.PACKET_DATA.WEARABLE_TYPES.HAT ? 0 : 1]);
             });
 
             container.append(btn);
@@ -1711,30 +1819,31 @@ C = Added patches
         /**
          * Updates the visual state of wearable buttons to reflect which item is currently equipped.
          * @param {number} id - The server-side ID of the newly equipped wearable. 0 means unequip.
-         * @param {number} type - The type of wearable (HAT or ACCESSORY).
+         * @param {string} type - The type of wearable (HAT or ACCESSORY).
          */
         updateEquippedWearable(id, type) {
-            const C = this.constants;
+            const LocalC = this.constants;
             const CoreC = this.core.data.constants;
-            const containerId = type === CoreC.PACKET_DATA.WEARABLE_TYPES.HAT ? C.DOM.WEARABLES_HATS : C.DOM.WEARABLES_ACCESSORIES;
+            const containerId = type === CoreC.PACKET_DATA.WEARABLE_TYPES.HAT ? LocalC.DOM.WEARABLES_HATS : LocalC.DOM.WEARABLES_ACCESSORIES;
             const container = document.getElementById(containerId);
             if (!container) return;
 
-            const currentSelected = container.querySelector(`.${C.DOM.WEARABLE_SELECTED_CLASS}`);
-            if (currentSelected) currentSelected.classList.remove(C.DOM.WEARABLE_SELECTED_CLASS);
+            const currentSelected = container.querySelector(`.${LocalC.DOM.WEARABLE_SELECTED_CLASS}`);
+            if (currentSelected) currentSelected.classList.remove(LocalC.DOM.WEARABLE_SELECTED_CLASS);
 
             if (id > 0) {
-                const buttonId = `${C.DOM.WEARABLE_BUTTON_ID_PREFIX}${type}-${id}`;
+                const buttonId = `${LocalC.DOM.WEARABLE_BUTTON_ID_PREFIX}${type}-${id}`;
                 const newSelectedBtn = document.getElementById(buttonId);
-                if (newSelectedBtn) newSelectedBtn.classList.add(C.DOM.WEARABLE_SELECTED_CLASS);
+                console
+                if (newSelectedBtn) newSelectedBtn.classList.add(LocalC.DOM.WEARABLE_SELECTED_CLASS);
             }
         },
 
         /** Hides/shows wearable buttons based on whether they are pinned. */
         refreshToolbarVisibility() {
-            const C = this.constants;
+            const LocalC = this.constants;
             const CoreC = this.core.data.constants;
-            const allButtons = document.querySelectorAll(`.${C.DOM.WEARABLE_BUTTON_CLASS}`);
+            const allButtons = document.querySelectorAll(`.${LocalC.DOM.WEARABLE_BUTTON_CLASS}`);
 
             allButtons.forEach(btn => {
                 const buttonId = parseInt(btn.dataset.wearableId);
@@ -1754,19 +1863,19 @@ C = Added patches
             const wearablesMod = this.core.miniMods.find(m => m.name === "Wearables Toolbar");
             if (!wearablesMod) return;
 
-            const C = wearablesMod.constants; // Wearables Constants
+            const LocalC = wearablesMod.constants; // Wearables Constants
             const storeHolder = document.getElementById(CoreC.DOM.STORE_HOLDER);
 
             Array.from(storeHolder.children).forEach((storeItem) => {
-                const joinBtn = storeItem.querySelector('.' + C.DOM.JOIN_ALLIANCE_BUTTON_CLASS);
+                const joinBtn = storeItem.querySelector('.' + LocalC.DOM.JOIN_ALLIANCE_BUTTON_CLASS);
                 const img = storeItem.querySelector('img');
 
-                if (storeItem.querySelector(`.${C.DOM.PIN_BUTTON_CLASS}`)) return;
-                if (!joinBtn || !img || !joinBtn.textContent.toLowerCase().includes(C.TEXT.EQUIP_BUTTON_TEXT)) return;
+                if (storeItem.querySelector(`.${LocalC.DOM.PIN_BUTTON_CLASS}`)) return;
+                if (!joinBtn || !img || !joinBtn.textContent.toLowerCase().includes(LocalC.TEXT.EQUIP_BUTTON_TEXT)) return;
 
                 let id, type;
-                const hatMatch = img.src.match(C.REGEX.HAT_IMG);
-                const accMatch = img.src.match(C.REGEX.ACCESSORY_IMG);
+                const hatMatch = img.src.match(LocalC.REGEX.HAT_IMG);
+                const accMatch = img.src.match(LocalC.REGEX.ACCESSORY_IMG);
 
                 if (hatMatch) {
                     id = parseInt(hatMatch[1]);
@@ -1780,13 +1889,13 @@ C = Added patches
 
                 const isPinned = wearablesMod.isWearablePinned(id);
                 const pinButton = document.createElement('div');
-                pinButton.className = `${C.DOM.JOIN_ALLIANCE_BUTTON_CLASS} ${C.DOM.PIN_BUTTON_CLASS}`;
+                pinButton.className = `${LocalC.DOM.JOIN_ALLIANCE_BUTTON_CLASS} ${LocalC.DOM.PIN_BUTTON_CLASS}`;
                 pinButton.style.marginTop = '5px';
-                pinButton.textContent = isPinned ? C.TEXT.UNPIN : C.TEXT.PIN;
+                pinButton.textContent = isPinned ? LocalC.TEXT.UNPIN : LocalC.TEXT.PIN;
 
                 pinButton.addEventListener('click', () => {
                     const isNowPinned = wearablesMod.togglePin(id, type);
-                    pinButton.textContent = isNowPinned ? C.TEXT.UNPIN : C.TEXT.PIN;
+                    pinButton.textContent = isNowPinned ? LocalC.TEXT.UNPIN : LocalC.TEXT.PIN;
                     wearablesMod.refreshToolbarVisibility();
                 });
 
@@ -1806,7 +1915,7 @@ C = Added patches
         /**
          * Toggles the pinned state of a wearable item.
          * @param {number} id - The ID of the wearable to pin/unpin.
-         * @param {number} type - The type of the wearable (HAT/ACCESSORY).
+         * @param {string} type - The type of the wearable (HAT/ACCESSORY).
          * @returns {boolean} - True if the item is now pinned, false otherwise.
          */
         togglePin(id, type) {
@@ -1831,7 +1940,7 @@ C = Added patches
             e.preventDefault();
             const grid = e.currentTarget;
             const currentlyDragged = this.state.draggedItem;
-            if (!currentlyDragged) return;
+            if (!currentlyDragged || currentlyDragged.parentElement != grid) return;
 
             // Determine where the item SHOULD be placed.
             const afterElement = this._getDragAfterElement(grid, e.clientX, e.clientY);
@@ -1852,8 +1961,8 @@ C = Added patches
          * @returns {HTMLElement|null} The sibling to insert before, or null to append at the end.
          */
         _getDragAfterElement(container, x, y) {
-            const C = this.constants;
-            const selector = `.${C.DOM.WEARABLE_BUTTON_CLASS}:not(.${C.DOM.WEARABLE_DRAGGING_CLASS})`;
+            const LocalC = this.constants;
+            const selector = `.${LocalC.DOM.WEARABLE_BUTTON_CLASS}:not(.${LocalC.DOM.WEARABLE_DRAGGING_CLASS})`;
             const draggableSiblings = [...container.querySelectorAll(selector)];
 
             for (const sibling of draggableSiblings) {
@@ -1937,15 +2046,15 @@ C = Added patches
         handleFocus() {
             // Instead of starting immediately, set a timeout to begin the animation.
             // This prevents the indicator from flashing for accidental clicks or very fast messages.
-            if (this.state.startIndicatorTimeoutId) clearTimeout(this.state.startIndicatorTimeoutId); // <-- NEW
-            this.state.startIndicatorTimeoutId = setTimeout(() => { // <-- CHANGED
-            this.startTypingIndicator();
+            if (this.state.startIndicatorTimeoutId) clearTimeout(this.state.startIndicatorTimeoutId);
+            this.state.startIndicatorTimeoutId = setTimeout(() => {
+                this.startTypingIndicator();
             }, this.config.START_DELAY);
         },
 
         /** Handles when the user clicks out of the chat box. */
         handleBlur() {
-            clearTimeout(this.state.startIndicatorTimeoutId); // <-- NEW: Cancel pending start
+            clearTimeout(this.state.startIndicatorTimeoutId);
             this.stopTypingIndicator();
         },
 
@@ -1954,7 +2063,7 @@ C = Added patches
             if (event.key === 'Enter') {
                 // Prevent the game from sending the message. We will handle it.
                 event.preventDefault();
-                clearTimeout(this.state.startIndicatorTimeoutId); // <-- NEW: Cancel pending start
+                clearTimeout(this.state.startIndicatorTimeoutId);
 
                 const message = this.state.chatBoxElement.value.trim();
                 if (message) {
@@ -2045,12 +2154,13 @@ C = Added patches
          * This is the core of the rate-limiting solution.
          */
         processMessageQueue() {
+            const CoreC = this.core.data.constants;
             const canSendMessage = Date.now() - this.state.lastMessageSentTime > this.config.RATE_LIMIT_MS;
             
             if (canSendMessage && this.state.messageQueue.length > 0) {
                 const messageToSend = this.state.messageQueue.shift(); // Get the next message
                 
-                this.core.sendGamePacket('6', [messageToSend.content]);
+                this.core.sendGamePacket(CoreC.PACKET_TYPES.CHAT, [messageToSend.content]);
                 this.state.lastMessageSentTime = Date.now();
                 
                 if (messageToSend.type === 'user') {
@@ -2146,24 +2256,24 @@ C = Added patches
 
         /** Attempts to use a food item from the action bar to heal the player. */
         attemptHeal() {
-            const C = this.core.data.constants;
+            const CoreC = this.core.data.constants;
 
             // Find the first available food item on the action bar
-            const actionBar = document.getElementById(C.DOM.ACTION_BAR);
+            const actionBar = document.getElementById(CoreC.DOM.ACTION_BAR);
             if (!actionBar) return;
 
             const foodItemElem = Array.from(actionBar.children).find(el => {
                 const itemData = this.core.getItemFromElem(el);
-                return itemData && itemData.itemType === C.ITEM_TYPES.FOOD && this.core.isEquippableItem(el);
+                return itemData && itemData.itemType === CoreC.ITEM_TYPES.FOOD && this.core.isEquippableItem(el);
             });
 
             if (foodItemElem) {
                 const foodItemData = this.core.getItemFromElem(foodItemElem);
                 if (foodItemData) {
                     // The game uses an empty array for "use item at current location"
-                    this.core.sendGamePacket(C.PACKET_TYPES.EQUIP_ITEM, [foodItemData.id, false]);
-                    this.core.sendGamePacket(C.PACKET_TYPES.USE_ITEM, [C.PACKET_DATA.USE_ACTIONS.START_USING]); // 1 is "start using"
-                    this.core.sendGamePacket(C.PACKET_TYPES.USE_ITEM, [C.PACKET_DATA.USE_ACTIONS.STOP_USING]); // 0 is "stop using"
+                    this.core.sendGamePacket(CoreC.PACKET_TYPES.EQUIP_ITEM, [foodItemData.id, false]);
+                    this.core.sendGamePacket(CoreC.PACKET_TYPES.USE_ITEM, [CoreC.PACKET_DATA.USE_ACTIONS.START_USING]);
+                    this.core.sendGamePacket(CoreC.PACKET_TYPES.USE_ITEM, [CoreC.PACKET_DATA.USE_ACTIONS.STOP_USING]);
                 }
             }
         },
@@ -2172,12 +2282,12 @@ C = Added patches
 
         /** Checks if any input fields or menus are currently focused/visible. */
         _isInputFocused() {
-            const C = this.core.data.constants;
+            const CoreC = this.core.data.constants;
             const isVisible = (id) => {
                 const elem = document.getElementById(id);
-                return elem && elem.style.display === C.CSS.DISPLAY_BLOCK;
+                return elem && elem.style.display === CoreC.CSS.DISPLAY_BLOCK;
             };
-            return isVisible(C.DOM.CHAT_HOLDER) || isVisible(C.DOM.STORE_MENU) || isVisible(C.DOM.ALLIANCE_MENU);
+            return isVisible(CoreC.DOM.CHAT_HOLDER) || isVisible(CoreC.DOM.STORE_MENU) || isVisible(CoreC.DOM.ALLIANCE_MENU);
         }
     };
 

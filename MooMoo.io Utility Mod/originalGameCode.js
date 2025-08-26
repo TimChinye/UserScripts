@@ -7397,7 +7397,7 @@ window.OriginalWebSocket = window.WebSocket;
                         UTILS.hookTouchEvents(enterGameButton);
                     }
                 }, {
-            A: setInitData,
+                    A: setInitData,
                     B: disconnect,
                     C: setupGame,
                     D: addPlayer,
