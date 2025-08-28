@@ -4,7 +4,7 @@
 // @description  This mod adds a number of mini-mods to enhance your MooMoo.io experience whilst not being too unfair to non-script users.
 // @license      GNU GPLv3 with the condition: no auto-heal or instant kill features may be added to the licensed material.
 // @author       TigerYT
-// @version      0.8.0
+// @version      0.8.1
 // @grant        none
 // @match        *://moomoo.io/*
 // @match        *://dev.moomoo.io/*
@@ -108,9 +108,6 @@ C = Added patches
 
             /** @property {boolean} playerHasRespawned - Tracks if the player has respawned. */
             playerHasRespawned: false,
-
-            /** @property {number|null} manualScanTimeoutId - The ID of the timeout for the manual codec scan fallback. */
-            manualScanTimeoutId: null
         },
 
         /**
@@ -163,6 +160,7 @@ C = Added patches
                 DOM: {
                     // IDs
                     UTILITY_MOD_STYLES: 'utilityModStyles',
+                    MENU_CONTAINER: 'menuContainer',
                     MAIN_MENU: 'mainMenu',
                     STORE_MENU: 'storeMenu',
                     STORE_HOLDER: 'storeHolder',
@@ -720,12 +718,6 @@ C = Added patches
                     // Update Title
                     titleElem.innerHTML = `MOOMOO<span>.</span>io`;
                     Logger.log("Updated game title screen.", "color: #4CAF50;");
-
-                    // Inject custom info element for the reload logic
-                    const menuContainer = document.getElementById('menuContainer');
-                    if (menuContainer && !document.getElementById(CoreC.DOM.LOADING_INFO)) {
-                        menuContainer.insertAdjacentHTML('beforeend', `<div id="${CoreC.DOM.LOADING_INFO}" style="display: none;"><br>Couldn't intercept in time. May be a network issue. Try not entering the game so fast.<br></div>`);
-                    }
                     return true; // Indicate success
                 }
                 return false; // Indicate failure
@@ -804,28 +796,44 @@ C = Added patches
         },
 
         /**
-         * Handles the scenario where the script fails to hook codecs. It waits for the
-         * user to try to enter the game, then displays a message and prompts for a reload.
+         * Updates or injects the loading UI element to provide feedback during connection attempts.
+         * @param {string} message - The message to display in the loading info element.
+         * @returns {void}
          */
-        async handleHookFailureAndReload() {
-            await this._waitForGameUIToShow();
-            Logger.error("All hooking methods failed. The script cannot function. Reloading...");
-            this._setUIState('showError');
-            await this.wait(5000);
-            const loadingInfo = document.getElementById(this.data.constants.DOM.LOADING_INFO);
-            if (loadingInfo) {
-                loadingInfo.append("If you cancel, you can play the game as normal - without the mod enabled.");
+        _updateLoadingUI(message) {
+            const CoreC = this.data.constants;
 
-                const loadingText = document.getElementById(this.data.constants.DOM.LOADING_TEXT);
+            // Inject custom info element for the reload logic
+            const menuContainer = document.getElementById(CoreC.DOM.MENU_CONTAINER);
+            if (menuContainer && !document.getElementById(CoreC.DOM.LOADING_INFO)) {
+                menuContainer.insertAdjacentHTML('beforeend', `<div id="${CoreC.DOM.LOADING_INFO}" style="display: none;"><br>${message}<br></div>`);
+                
+                const loadingText = document.getElementById(CoreC.DOM.LOADING_TEXT);
                 const syncDisplayCallback = () => {
                     const newDisplayStyle = window.getComputedStyle(loadingText).display;
                     if (loadingInfo.style.display !== newDisplayStyle) {
                         loadingInfo.style.display = newDisplayStyle;
                     }
                 };
+
                 const observer = new MutationObserver(syncDisplayCallback);
-                syncDisplayCallback();
                 observer.observe(loadingText, { attributes: true, attributeFilter: ['style'] });
+            }
+        },
+
+        /**
+         * Handles the scenario where the script fails to hook codecs. It waits for the
+         * user to try to enter the game, then displays a message and prompts for a reload.
+         */
+        async handleHookFailureAndReload() {
+            await this._waitForGameUIToShow();
+            Logger.error("All hooking methods failed. The script cannot function. Reloading...");
+            this._updateLoadingUI("Couldn't intercept in time. May be a network issue. Try not entering the game so fast.");
+            this._setUIState('showError');
+            await this.wait(5000);
+            const loadingInfo = document.getElementById(this.data.constants.DOM.LOADING_INFO);
+            if (loadingInfo) {
+                loadingInfo.append("If you cancel, you can play the game as normal - without the mod enabled.");
 
                 await this.waitTillNextFrame();
                 await this.waitTillNextFrame();
@@ -847,25 +855,6 @@ C = Added patches
             this.miniMods.forEach(mod => {
                 if (typeof mod.addEventListeners === 'function') mod.addEventListeners();
             });
-        },
-
-        /**
-         * Called when script interception is successful.
-         */
-        onCodecsIntercepted(encoder, decoder) {
-            Logger.log("Codec interception successful!", "color: #4CAF50; font-weight: bold;");
-            this.state.gameEncoder = encoder;
-            this.state.gameDecoder = decoder;
-            this.state.codecsReady = true;
-            this.attemptFinalSetup();
-        },
-
-        /**
-         * Called when script interception fails, triggering fallback methods.
-         */
-        onCodecsFailed() {
-            Logger.warn("Script interception failed. Reverting to fallback hook methods.");
-            this.initializeHooks();
         },
 
         /**
@@ -906,91 +895,32 @@ C = Added patches
         },
 
         /**
-         * Manually scans the window object to find the game's encoder and decoder.
-         * This is a fallback mechanism in case the prototype hooks fail.
-         * @param {Function} onSuccessCallback - The function to call if both codecs are found.
-         */
-        findCodecsManually(onSuccessCallback) {
-            Logger.warn("Prototype hooks failed or timed out. Initiating manual scan...");
-
-            const MAX_SEARCH_DEPTH = 5;
-            const visited = new Set(); // To avoid infinite loops in circular objects
-
-            const scanObject = (obj, depth) => {
-                // Stop conditions for recursion
-                if (depth > MAX_SEARCH_DEPTH || !obj || visited.has(obj) || (this.state.gameEncoder && this.state.gameDecoder)) {
-                    return;
-                }
-                visited.add(obj);
-
-                for (const key in obj) {
-                    try {
-                        const prop = obj[key];
-                        if (!prop || typeof prop !== 'object') continue;
-
-                        // Heuristic 1: Look for the msgpack encoder
-                        if (!this.state.gameEncoder && prop.initialBufferSize !== undefined && typeof prop.encode === 'function') {
-                            Logger.log("Manual scan found the ENCODER.", "color: #4CAF50;");
-                            this.state.gameEncoder = prop;
-                        }
-
-                        // Heuristic 2: Look for the msgpack decoder
-                        if (!this.state.gameDecoder && prop.maxExtLength !== undefined && typeof prop.decode === 'function') {
-                            Logger.log("Manual scan found the DECODER.", "color: #4CAF50;");
-                            this.state.gameDecoder = prop;
-                        }
-
-                        // If we found both, stop scanning this branch
-                        if (this.state.gameEncoder && this.state.gameDecoder) {
-                            return;
-                        }
-
-                        // Recurse into the nested object
-                        scanObject(prop, depth + 1);
-
-                    } catch (e) {
-                        // Ignore errors from accessing certain properties
-                    }
-                }
-            };
-
-            scanObject(window, 0);
-
-            if (this.state.gameEncoder && this.state.gameDecoder) {
-                Logger.log("Manual scan succeeded.", "color: #4CAF50;");
-                onSuccessCallback(); // Trigger the final setup
-            } else {
-                Logger.error("Manual scan failed to find one or both msgpack codecs. The script may not function correctly.");
-            }
-        },
-
-        /**
-         * The original, less reliable hooking method, now used as a fallback.
+         * Sets up hooks into Object.prototype to capture the game's msgpack encoder and decoder.
          */
         initializeHooks() {
             const CoreC = this.data.constants;
+
+            // Set up prototype hooks for both encoder and decoder
             let codecsFoundByHook = 0;
             const onCodecFoundByHook = () => {
                 codecsFoundByHook++;
                 if (codecsFoundByHook === 2) {
                     Logger.log("Both msgpack codecs found via prototype hooks.", "color: #4CAF50;");
-                    clearTimeout(this.state.manualScanTimeoutId);
                     this.state.codecsReady = true;
                     this.attemptFinalSetup();
                 }
             };
+
             this.hookIntoPrototype("initialBufferSize", (obj) => { this.state.gameEncoder = obj; onCodecFoundByHook(); });
             this.hookIntoPrototype("maxExtLength", (obj) => { this.state.gameDecoder = obj; onCodecFoundByHook(); });
-
-            this.state.manualScanTimeoutId = setTimeout(() => {
-                if (!this.state.codecsReady) {
-                    this.findCodecsManually(this.attemptFinalSetup.bind(this));
-                }
-            }, CoreC.TIMEOUTS.MANUAL_CODEC_SCAN);
         },
 
         /**
-         * The new, primary method for capturing codecs by intercepting the game script.
+         * Attempts to intercept and modify the game's main script to inject code that exposes
+         * the msgpack encoder and decoder to the global window object. This is a more invasive
+         * method that involves fetching the script, modifying its text, and reinserting it into the DOM.
+         * It also sets up a MutationObserver to catch the script if it is added later. 
+         * If successful, it stores the codecs and attempts final setup.
          */
         interceptGameScript() {
             Logger.log("Attempting to intercept and modify the game script...");
@@ -1001,7 +931,7 @@ C = Added patches
             const DECODER_REGEX = /(this\.maxStrLength=\w,)/;
             const DECODER_INJECTION = `$1 console.log("[Util-Mod] ✅ CAPTURED DECODER!"), window.gameDecoder = this,`;
 
-            const openBackdoor = (withinObserver) => {
+            const leaveBackdoorOpen = (withinObserver) => {
                 const targetScript = document.querySelector(`script[src*="${SCRIPT_SELECTOR}"]`);
                 if (targetScript) {
                     if (withinObserver) obs.disconnect();
@@ -1018,7 +948,6 @@ C = Added patches
 
                         if (!modifiedScript.includes("window.gameEncoder") || !modifiedScript.includes("window.gameDecoder")) {
                             Logger.error("Script injection failed! Regex patterns did not match.");
-                            this.onCodecsFailed();
                             return;
                         }
 
@@ -1030,23 +959,27 @@ C = Added patches
                         // Verify capture and finalize setup
                         setTimeout(() => {
                             if (window.gameEncoder && window.gameDecoder) {
-                                this.onCodecsIntercepted(window.gameEncoder, window.gameDecoder);
+                                Logger.log("Codec interception successful!", "color: #4CAF50; font-weight: bold;");
+                                
+                                this.state.gameEncoder = window.gameEncoder;
+                                this.state.gameDecoder = window.gameDecoder;
+                                this.state.codecsReady = true;
+
+                                this.attemptFinalSetup();
                             } else {
                                 Logger.error("Codecs were not found on window after injection.");
-                                this.onCodecsFailed();
                             }
                         }, 100);
                     })
                     .catch(err => {
                         Logger.error("Failed to fetch or process game script:", err);
-                        this.onCodecsFailed();
                     });
                 } else { /* Fail silently */ };
             }
 
-            openBackdoor(false);
+            leaveBackdoorOpen(false);
 
-            const observer = new MutationObserver((mutations, obs) => openBackdoor(true));
+            const observer = new MutationObserver((mutations, obs) => leaveBackdoorOpen(true));
             observer.observe(document.documentElement, { childList: true, subtree: true });
         },
 
@@ -1098,14 +1031,13 @@ C = Added patches
          * The main entry point for the script. Initializes data and sets up hooks.
          */
         init() {
-            Logger.log("--- MOOMOO.IO Utility Mod Initializing ---", "color: #ffb700; font-weight: bold;");
+            Logger.log("--- MOOMOO.IO Utility Mod Initializing ---", "color: #ffb700; font-weight: bold;")
 
-            // Set up hooks to intercept codecs and WebSocket
-            // this.initializeHooks();
-
-            // This is now the primary hooking mechanism.
-            //Set up hooks to intercept codecs or modifying the game script directly to open a backdoor.
+            // Attempts to find codecs by modifying the game script directly to open a backdoor.
             this.interceptGameScript();
+
+            // Set up hooks to intercept codecs as they enter the global scope.
+             this.initializeHooks();
 
             // Set up WebSocket proxy to capture the game's WebSocket instance.
             this.setupWebSocketProxy();
