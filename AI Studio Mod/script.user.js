@@ -3,7 +3,7 @@
 // @namespace    https://greasyfork.org/users/137913
 // @description  Adds a dynamic TOC with smart scrolling for long sections to the settings panel.
 // @author       TigerYT
-// @version      2.3.0
+// @version      2.3.2
 // @match        *://aistudio.google.com/prompts/*
 // @icon         https://www.gstatic.com/aistudio/ai_studio_favicon_2_32x32.png
 // @grant        none
@@ -28,19 +28,68 @@
             ms-autoscroll-container:not(#_) {
                 overflow: visible;
             }
+
             /* Hide the custom scrollbar component */
             ms-prompt-scrollbar {
                 display: none;
             }
-            /* Common style for all jump links */
+
+            /* Common style for table of contents */
+            .toc-group-title {
+                font-family: Inter,sans-serif;
+                font-optical-sizing: auto;
+                font-size: 12px;
+                font-weight: 400;
+                line-height: 20px;
+                color: var(--color-v3-text-var);
+                margin-block: 20px 12px;
+            }
+
+            .toc-item {
+                -webkit-box-align: center;
+                -webkit-align-items: center;
+                -moz-box-align: center;
+                -ms-flex-align: center;
+                align-items: center;
+                -webkit-box-orient: horizontal;
+                -webkit-box-direction: normal;
+                -webkit-flex-direction: row;
+                -moz-box-orient: horizontal;
+                -moz-box-direction: normal;
+                -ms-flex-direction: row;
+                flex-direction: row;
+                display: -webkit-box;
+                display: -webkit-flex;
+                display: -moz-box;
+                display: -ms-flexbox;
+                display: flex;
+                gap: 4px;
+                -webkit-box-pack: justify;
+                -webkit-justify-content: space-between;
+                -moz-box-pack: justify;
+                -ms-flex-pack: justify;
+                justify-content: space-between;
+
+                > p {
+                    margin-block: 8px;
+                }
+            }
+
             .toc-jump-link {
                 color: var(--google-blue-600, #1a73e8);
                 text-decoration: none;
                 font-weight: 500;
                 cursor: pointer;
-            }
-            .toc-jump-link:hover {
-                text-decoration: underline;
+
+                &.jump-to-bottom {
+                    color: oklch(from var(--color-v3-text-link) l c calc(h - 30));
+                    margin-right: 1ch;
+                }
+
+                &:hover {
+                    text-decoration: underline;
+                    color: oklch(from currentColor calc(l * 1.5) c h);
+                }
             }
         `;
 
@@ -53,24 +102,19 @@
     function updateTableOfContents(settingsContainer, chatBox) {
 
         // A. Clear any previously generated TOC elements to prevent duplication.
-        const oldElements = settingsContainer.querySelectorAll('.toc-generated-item');
+        const oldElements = settingsContainer.querySelectorAll('.toc-item');
         oldElements.forEach(el => el.remove());
 
         // B. Create the static container elements for the TOC.
         const dividerElement = document.createElement('mat-divider');
-        dividerElement.setAttribute('_ngcontent-ng-c1976526210', '');
-        dividerElement.setAttribute('role', 'separator');
-        dividerElement.setAttribute('aria-orientation', 'horizontal');
-        dividerElement.className = 'mat-divider mat-divider-horizontal ng-star-inserted toc-generated-item';
+        dividerElement.className = 'mat-divider';
+        dividerElement.style.margin = "8px 0";
 
         const headingElement = document.createElement('h3');
-        headingElement.setAttribute('_ngcontent-ng-c1211128260', '');
-        headingElement.className = 'thinking-group-title ng-tns-c1211128260-17 toc-generated-item';
+        headingElement.className = 'toc-group-title';
         headingElement.textContent = 'Table of Contents';
 
         const tocItemsContainer = document.createElement('div');
-        tocItemsContainer.setAttribute('_ngcontent-ng-c19765210', '');
-        tocItemsContainer.className = 'advanced-settings ng-star-inserted toc-generated-item';
 
         // C. Find all chat turns and create a link for each one.
         const chatTurns = Array.from(chatBox.firstElementChild.children)
@@ -87,7 +131,7 @@
                             responseName = 'User Input';
                             break;
                         case "Model":
-                            responseName = responseElem.classList.contains('author-label') ? 'Model Thinking' : 'Model Output';
+                            responseName = responseElem.querySelector('.author-label') ? 'Model Thinking' : 'Model Output';
                             break;
                     }
                 }
@@ -96,13 +140,11 @@
 
                 // 1. Create the main container DIV for the row
                 const tocItemContainer = document.createElement('div');
-                tocItemContainer.className = 'mat-mdc-tooltip-trigger settings-item ng-tns-c1211128260-12 toc-generated-item';
-                tocItemContainer.setAttribute('_ngcontent-ng-c1211128260', '');
+                tocItemContainer.className = 'toc-item';
 
                 // 2. Create the P element for the label
                 const labelElement = document.createElement('p');
-                labelElement.className = 'v3-font-body ng-tns-c1211128260-12';
-                labelElement.setAttribute('_ngcontent-ng-c1211128260', '');
+                labelElement.className = 'v3-font-body';
                 labelElement.textContent = (index + 1) + '. ' + responseName;
 
                 // 3. Create a span to hold all action links
@@ -114,12 +156,9 @@
                 if (isTallerThanViewport) {
                     // If it's too tall, add the special 'scroll to bottom' link
                     const jumpLinkDown = document.createElement('a');
-                    jumpLinkDown.className = 'toc-jump-link';
+                    jumpLinkDown.className = 'toc-jump-link jump-to-bottom';
                     jumpLinkDown.textContent = '↓';
                     jumpLinkDown.title = 'Scroll to the bottom of this turn';
-                    // Apply special styling
-                    jumpLinkDown.style.color = 'oklch(from var(--color-v3-text-link) l c calc(h - 30))';
-                    jumpLinkDown.style.marginRight = '1ch';
                     jumpLinkDown.addEventListener('click', () => {
                         elem.scrollIntoView({ block: 'end', inline: 'nearest', behavior: 'smooth' });
                     });
