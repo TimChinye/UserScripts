@@ -34,7 +34,7 @@ C = Added patches
          * @param {string} message The message to log.
          * @param {...any} args Additional arguments to pass to console.log.
          */
-        log: (message, ...args) => MooMooUtilityMod.config.DEBUG_MODE && console.log(`%c[Util-Mod] ${message}`, ...args),
+        log: (message, ...args) => MooMooUtilityMod.config.DEBUG_MODE && console.log((args[0]?.startsWith('color') ? '%c' : '') + `[Util-Mod] ${message}`, ...args),
         /**
          * Logs an informational message.
          * @param {string} message The message to log.
@@ -76,8 +76,11 @@ C = Added patches
          * @property {object} state - Holds the dynamic state of the script, changing as the user plays.
          */
         state: {
-            /** @property {boolean} isListenerActive - Tracks if the final setup has been completed. */
-            isListenerActive: false,
+            /** @property {boolean} enabled - Master toggle for the entire utility mod. */
+            enabled: true,
+
+            /** @property {number} initTimestamp - The timestamp when the script was initiated. */
+            initTimestamp: Date.now(),
             
             /** @property {boolean} codecsReady - Tracks if the msgpack encoder and decoder have been found. */
             codecsReady: false,
@@ -170,6 +173,7 @@ C = Added patches
                     ACTION_BAR: 'actionBar',
                     GAME_CANVAS: 'gameCanvas',
                     GAME_UI: 'gameUI',
+                    DIED_TEXT: 'diedText',
                     ENTER_GAME_BUTTON: 'enterGame',
                     UPGRADE_HOLDER: 'upgradeHolder',
                     UPGRADE_COUNTER: 'upgradeCounter',
@@ -364,7 +368,6 @@ C = Added patches
                 },
                 '5': ([action, itemID, itemType]) => {
                     const CoreC = window.MooMooUtilityMod.data.constants;
-                    console.log("Wearables Toolbar: Received wearable packet", itemType, itemID, action);
                     return ({
                         itemType: itemType === 0 ? CoreC.PACKET_DATA.WEARABLE_TYPES.HAT : CoreC.PACKET_DATA.WEARABLE_TYPES.ACCESSORY,
                         itemID,
@@ -502,6 +505,20 @@ C = Added patches
         },
 
         /**
+         * Checks if a user input element (like chat or menus) is currently focused.
+         * @private
+         * @returns {boolean} True if an input is focused, false otherwise.
+         */
+        isInputFocused() {
+            const CoreC = this.data.constants;
+            const isVisible = (id) => {
+                const elem = document.getElementById(id);
+                return elem && elem.style.display === CoreC.CSS.DISPLAY_BLOCK;
+            };
+            return isVisible(CoreC.DOM.CHAT_HOLDER) || isVisible(CoreC.DOM.STORE_MENU) || isVisible(CoreC.DOM.ALLIANCE_MENU);
+        },
+
+        /**
          * Observes a specific HTMLElement and resolves a promise once its computed
          * style property 'display' stops being 'none'.
          *
@@ -531,6 +548,141 @@ C = Added patches
 
                 // Start observing the specific element for attribute changes
                 observer.observe(element, { attributes: true });
+            });
+        },
+
+        /**
+         * Waits for a list of elements to be present in the DOM.
+         * @param {Object<string, string>} elementMap - An object mapping desired variable names to element IDs.
+         * @returns {Promise<Object<string, HTMLElement>>} A promise that resolves with an object
+         * mapping the variable names to the found HTMLElements.
+         */
+        waitForElementsToLoad(elementMap) {
+            return new Promise(resolve => {
+                const foundElements = {}; // This will be keyed by the short names (e.g; 'mainMenu')
+
+                const checkElements = () => {
+                    let allFound = true;
+                    // Iterate over the map [shortName, id]
+                    for (const [shortName, id] of Object.entries(elementMap)) {
+                        if (!foundElements[shortName]) { // Only check for elements we haven't found yet
+                            const element = document.getElementById(id);
+                            if (element) {
+                                foundElements[shortName] = element;
+                            } else {
+                                allFound = false; // At least one is still missing
+                            }
+                        }
+                    }
+                    return allFound;
+                };
+
+                // First, check if they're already there.
+                if (checkElements()) {
+                    resolve(foundElements);
+                    return;
+                }
+
+                // If not, set up an observer to watch for changes.
+                const observer = new MutationObserver(() => {
+                    if (checkElements()) {
+                        observer.disconnect(); // Stop observing once we've found everything
+                        resolve(foundElements);
+                    }
+                });
+
+                // Start observing the entire document for additions of new nodes.
+                observer.observe(document.body, {
+                    childList: true,
+                    subtree: true
+                });
+            });
+        },
+
+        /**
+         * Locks a CSS style property on an array of elements, preventing it from being
+         * changed by JavaScript. A 'data-locked-styles' attribute is added to the element
+         * for easy inspection, acting as the single source of truth for the lock state.
+         *
+         * @param {string} propertyName - The name of the style property to lock (e.g., 'display').
+         * @param {HTMLElement[]} elements - An array of HTMLElements to affect.
+         */
+        lockStyleUpdates(propertyName, elements) {
+            if (!Array.isArray(elements)) {
+                console.error("Failed to lock style: `elements` must be an array.");
+                return;
+            }
+
+            elements.forEach(element => {
+                if (!(element instanceof HTMLElement)) {
+                    console.warn("Skipping item because it is not a valid HTMLElement:", element);
+                    return;
+                }
+
+                const lockedStyles = (element.getAttribute('data-locked-styles') || '').split(',').filter(Boolean);
+                if (lockedStyles.includes(propertyName)) {
+                    return; // This property is already locked.
+                }
+
+                const styleObj = element.style;
+                // Capture the value at the moment of locking.
+                let currentValue = styleObj[propertyName];
+
+                Object.defineProperty(styleObj, propertyName, {
+                    // This MUST be true so we can 'delete' it later to unlock.
+                    configurable: true,
+                    enumerable: true,
+                    get() {
+                        return currentValue;
+                    },
+                    set(newValue) {
+                        console.warn(`Blocked attempt to set locked property "${propertyName}" to "${newValue}" on`, element);
+                        // The set operation is completely ignored.
+                    }
+                });
+
+                // Update the visible HTML attribute.
+                lockedStyles.push(propertyName);
+                element.setAttribute('data-locked-styles', lockedStyles.join(','));
+            });
+        },
+
+        /**
+        * Unlocks a CSS style property on an array of elements by deleting the custom
+        * lock override, restoring its default browser behavior. The 'data-locked-styles'
+        * attribute is updated or removed.
+        *
+        * @param {string} propertyName - The name of the style property to unlock.
+        * @param {HTMLElement[]} elements - An array of HTMLElements to affect.
+        */
+        unlockStyleUpdates(propertyName, elements) {
+            if (!Array.isArray(elements)) {
+                console.error("Failed to unlock style: `elements` must be an array.");
+                return;
+            }
+
+            elements.forEach(element => {
+                if (!(element instanceof HTMLElement)) {
+                    return;
+                }
+
+                const lockedStylesAttr = element.getAttribute('data-locked-styles');
+                if (!lockedStylesAttr || !lockedStylesAttr.includes(propertyName)) {
+                    return; // This property isn't locked on this element.
+                }
+
+                // --- The Key Step: Delete the override ---
+                // This removes our custom get/set and reverts to the default prototype behavior.
+                delete element.style[propertyName];
+
+                // Update the visible HTML attribute.
+                const updatedLockedStyles = lockedStylesAttr.split(',').filter(p => p !== propertyName);
+
+                if (updatedLockedStyles.length > 0) {
+                    element.setAttribute('data-locked-styles', updatedLockedStyles.join(','));
+                } else {
+                    element.removeAttribute('data-locked-styles');
+                }
             });
         },
 
@@ -732,66 +884,77 @@ C = Added patches
             observer.observe(document.body, { childList: true, subtree: true });
         },
 
-
         /**
          * Centralized method to manage the visibility of UI elements.
          * This prevents duplicating style logic across multiple methods.
-         * @param {'loadingError' | 'gameplay'} state The UI state to display.
+         * @param {'showError' | 'showGameplay' | 'showMenu'} state The UI state to display.
          */
-        _setUIState(state) {
+        _setInfoUIState(state) {
             const CoreC = this.data.constants;
+            
+            this.waitForElementsToLoad({
+                mainMenu: CoreC.DOM.MAIN_MENU,
+                menuCardHolder: CoreC.DOM.MENU_CARD_HOLDER,
+                loadingText: CoreC.DOM.LOADING_TEXT,
+                gameCanvas: CoreC.DOM.GAME_CANVAS,
+                gameUI: CoreC.DOM.GAME_UI,
+                diedText: CoreC.DOM.DIED_TEXT,
+                utilityModStyles: CoreC.DOM.UTILITY_MOD_STYLES
+            }).then(({ mainMenu, menuCardHolder, loadingText, gameCanvas, gameUI, diedText, utilityModStyles }) => {
+                const loadingInfo = document.getElementById(CoreC.DOM.LOADING_INFO);
+                
+                // Re-enable updating the element display types (if locked).
+                this.unlockStyleUpdates("display", [mainMenu, menuCardHolder, loadingText, gameCanvas, gameUI, diedText, utilityModStyles]);
 
-            // Cache DOM elements if not already done.
-            // It's better to do this once during an init phase.
-            const mainMenu = document.getElementById(CoreC.DOM.MAIN_MENU);
-            const menuCardHolder = document.getElementById(CoreC.DOM.MENU_CARD_HOLDER);
-            const loadingText = document.getElementById(CoreC.DOM.LOADING_TEXT);
-            const loadingInfo = document.getElementById(CoreC.DOM.LOADING_INFO);
-            const gameCanvas = document.getElementById(CoreC.DOM.GAME_CANVAS);
-            const gameUI = document.getElementById(CoreC.DOM.GAME_UI);
-            const utilityModStyles = document.getElementById(CoreC.DOM.UTILITY_MOD_STYLES);
+                document.body.style.backgroundImage = '';
+                menuCardHolder.style.display = 'none';
+                loadingText.style.display = 'none';
+                gameCanvas.style.display = 'none';
+                mainMenu.style.display = 'none';
+                gameUI.style.display = 'none';
 
-            // Define state properties
-            const isError = state === 'showError';
-            const isGameplay = state === 'showGameplay';
-            if (!(isError || isGameplay)) return; // Invalid state
+                switch (state) {
+                    case 'showMenu':
+                        // Set visibility
+                        menuCardHolder.style.display = 'block';
+                        gameCanvas.style.display = 'block';
+                        mainMenu.style.display = 'block';
 
-            // Toggle visibility based on state
-            mainMenu.style.display = isError ? 'block' : 'none';
-            menuCardHolder.style.display = isGameplay ? 'block' : 'none';
-            loadingText.style.display = isError ? 'block' : 'none';
-            gameCanvas.style.display = isGameplay ? 'block' : 'none';
-            gameUI.style.display = isGameplay ? 'block' : 'none';
-            document.body.style.backgroundImage = isError ? 'url("https://tinyurl.com/MooMooBackground")' : '';
-            if (isError && loadingInfo) loadingText.childNodes[0].nodeValue = `Re-attempting Connection...`;
-            if (isGameplay) utilityModStyles.remove();
-            if (isGameplay) gameName.innerHTML = 'MOOMOO.io';
-        },
+                        // Perform actions
+                        utilityModStyles.remove();
+                        gameName.innerHTML = 'MOOMOO.io';
+                        if (loadingInfo) loadingInfo.remove();
+                        break;
 
-        /**
-         * Waits for the user to proceed from the main menu by observing when the game ui becomes visible.
-         * @returns {Promise<void>} A promise that resolves when the game ui is visible.
-         */
-        _waitForGameUIToShow() {
-            const CoreC = this.data.constants;
-            return new Promise(resolve => {
-                const gameUI = document.getElementById(CoreC.DOM.GAME_UI);
-                if (gameUI.style.display === 'block') {
-                    // If menu is already hidden, the user has clicked 'enterGame', resolve and revert immediately.
-                    return resolve();
-                } else {
-                    // Otherwise, the menu is visible. We need to wait for the user to click.
-                    // We'll use a MutationObserver to watch for the `style` attribute to change.
-                    const observer = new MutationObserver(() => {
-                        if (gameUI.style.display === 'block') {
-                            observer.disconnect();
-                            resolve(); // The user has clicked, resolve and revert immediately.
-                        }
-                    });
+                    case 'showGameplay':
+                        // Set visibility
+                        menuCardHolder.style.display = 'block';
+                        gameCanvas.style.display = 'block';
+                        gameUI.style.display = 'block';
 
-                    observer.observe(gameUI, { attributes: true, attributeFilter: ['style'] });
+                        // Perform actions
+                        utilityModStyles.remove();
+                        gameName.innerHTML = 'MOOMOO.io';
+                        if (loadingInfo) loadingInfo.remove();
+                        break;
+
+                    case 'showError':
+                        // Set visibility
+                        mainMenu.style.display = 'block';
+                        loadingText.style.display = 'block';
+
+                        // Disable updating the element display types
+                        this.lockStyleUpdates("display", [mainMenu, menuCardHolder, loadingText, gameCanvas, gameUI, diedText, utilityModStyles]);
+
+                        // Perform actions
+                        document.body.style.backgroundImage = 'url("https://tinyurl.com/MooMooBackground")';
+                        if (loadingInfo) loadingText.childNodes[0].nodeValue = `Re-attempting Connection...`;
+                        break;
+
+                    default:
+                        Logger.error(`Invalid state provided: ${state}`);
+                        break;
                 }
-
             });
         },
 
@@ -805,8 +968,9 @@ C = Added patches
 
             // Inject custom info element for the reload logic
             const menuContainer = document.getElementById(CoreC.DOM.MENU_CONTAINER);
-            if (menuContainer && !document.getElementById(CoreC.DOM.LOADING_INFO)) {
-                menuContainer.insertAdjacentHTML('beforeend', `<div id="${CoreC.DOM.LOADING_INFO}" style="display: none;"><br>${message}<br></div>`);
+            const loadingInfoID = CoreC.DOM.LOADING_INFO;
+            if (menuContainer && !document.getElementById(loadingInfoID)) {
+                menuContainer.insertAdjacentHTML('beforeend', `<div id="${loadingInfoID}" style="display: none;"><br>${message}<br></div>`);
                 
                 const loadingText = document.getElementById(CoreC.DOM.LOADING_TEXT);
                 const syncDisplayCallback = () => {
@@ -822,24 +986,48 @@ C = Added patches
         },
 
         /**
-         * Handles the scenario where the script fails to hook codecs. It waits for the
-         * user to try to enter the game, then displays a message and prompts for a reload.
+         * Handles the scenario where the script fails to hook codecs. It displays
+         * a message and prompts for a reload. If the user does not enter the game, it will reload after a delay.
+         * @param {boolean} [afterGameEnter=false] - If true, waits for the user to fully enter the game before reloading.
+         * @returns {Promise<void>} A promise that resolves after handling the failure
          */
-        async handleHookFailureAndReload() {
-            await this._waitForGameUIToShow();
+        async handleHookFailureAndReload(afterGameEnter = false) {
+            if (!this.state.enabled) return; // Already disabled, no need to proceed.
+            
+            const CoreC = this.data.constants;
+
+            const { gameUI, mainMenu } = await this.waitForElementsToLoad({
+                gameUI: CoreC.DOM.GAME_UI,
+                mainMenu: CoreC.DOM.MAIN_MENU
+            });
+
+            if (afterGameEnter) await this.waitForVisible(gameUI);
+            else await this.waitForVisible(mainMenu);
+            
             Logger.error("All hooking methods failed. The script cannot function. Reloading...");
             this._updateLoadingUI("Couldn't intercept in time. May be a network issue. Try not entering the game so fast.");
-            this._setUIState('showError');
+            this._setInfoUIState('showError');
+            
             await this.wait(5000);
-            const loadingInfo = document.getElementById(this.data.constants.DOM.LOADING_INFO);
+            
+            const loadingInfo = document.getElementById(CoreC.DOM.LOADING_INFO);
             if (loadingInfo) {
                 loadingInfo.append("If you cancel, you can play the game as normal - without the mod enabled.");
 
                 await this.waitTillNextFrame();
                 await this.waitTillNextFrame();
             }
-            window.location.reload();
-            setTimeout(() => this._setUIState('showGameplay'), 0);
+
+            if (afterGameEnter || window.confirm("Are you sure you want to reload?")) {
+                window.location.reload();
+            }
+
+            setTimeout(() => {
+                this.state.enabled = false; // Disable mod, continue playing.
+
+                if (afterGameEnter) this._setInfoUIState('showGameplay'), Logger.log("Reverted to gameplay UI.");
+                else this._setInfoUIState('showMenu'), Logger.log("Reverted to menu UI.");
+            }, 0);
         },
 
         /**
@@ -848,8 +1036,8 @@ C = Added patches
          * we don't try to attach listeners prematurely.
          */
         attemptFinalSetup() {
-            if (this.state.isListenerActive || !this.state.codecsReady || !this.state.socketReady) return;
-            this.state.isListenerActive = true;
+            if (!this.state.codecsReady || !this.state.socketReady) return;
+
             Logger.log("Codecs and WebSocket are ready. Attaching all listeners.", "color: #ffb700;");
             this.state.gameSocket.addEventListener('message', this.handleSocketMessage.bind(this));
             this.miniMods.forEach(mod => {
@@ -867,10 +1055,13 @@ C = Added patches
          */
         hookIntoPrototype(propName, onFound) {
             Logger.log(`Setting up prototype hook for: ${propName}`);
+            if (this.state?.codecsReady) return Logger.log("Both codecs found already, cancelling prototype hooks method.", "color: #4CAF50;");
+            
             const originalDesc = Object.getOwnPropertyDescriptor(Object.prototype, propName);
-
             Object.defineProperty(Object.prototype, propName, {
                 set(value) {
+                    if (this.state?.codecsReady) return Logger.log("Both codecs found already, cancelling prototype hooks method.", "color: #4CAF50;");
+                    
                     // Restore the prototype to its original state *before* doing anything else.
                     // This prevents unexpected side effects and race conditions within the hook itself.
                     if (originalDesc) {
@@ -885,7 +1076,7 @@ C = Added patches
                     // Check if this is the object we are looking for and trigger the callback.
                     // We check for the function's existence to be more certain.
                     const isFoundCodec = (targetPropName, codecOperation) => propName === targetPropName && typeof codecOperation === 'function';
-                    if (isFoundCodec("initialBufferSize", this.encode) && isFoundCodec("maxExtLength", this.decode)) {
+                    if (isFoundCodec("initialBufferSize", this.encode) || isFoundCodec("maxExtLength", this.decode)) {
                         Logger.log(`Hook successful for "${propName}". Object found.`, "color: #4CAF50;");
                         onFound(this);
                     }
@@ -901,18 +1092,18 @@ C = Added patches
             const CoreC = this.data.constants;
 
             // Set up prototype hooks for both encoder and decoder
-            let codecsFoundByHook = 0;
-            const onCodecFoundByHook = () => {
-                codecsFoundByHook++;
-                if (codecsFoundByHook === 2) {
-                    Logger.log("Both msgpack codecs found via prototype hooks.", "color: #4CAF50;");
+            const onCodecFound = () => {
+                if (this.state.gameEncoder && this.state.gameDecoder) {
+                    Logger.log(`Both msgpack codecs found via prototype hooks. ${Date.now() - this.state.initTimestamp}ms`, "color: #4CAF50;");
+                    
                     this.state.codecsReady = true;
+
                     this.attemptFinalSetup();
                 }
             };
 
-            this.hookIntoPrototype("initialBufferSize", (obj) => { this.state.gameEncoder = obj; onCodecFoundByHook(); });
-            this.hookIntoPrototype("maxExtLength", (obj) => { this.state.gameDecoder = obj; onCodecFoundByHook(); });
+            this.hookIntoPrototype("initialBufferSize", (obj) => { this.state.gameEncoder = obj; onCodecFound(); });
+            this.hookIntoPrototype("maxExtLength", (obj) => { this.state.gameDecoder = obj; onCodecFound(); });
         },
 
         /**
@@ -927,49 +1118,76 @@ C = Added patches
 
             const SCRIPT_SELECTOR = "/assets/index-eb87bff7.js";
             const ENCODER_REGEX = /(this\.initialBufferSize=\w,)/;
-            const ENCODER_INJECTION = `$1 console.log("[Util-Mod] ✅ CAPTURED ENCODER!"), window.gameEncoder = this,`;
+            const ENCODER_INJECTION = `$1 Logger.log("✅ CAPTURED ENCODER!"), window.gameEncoder = this,`;
             const DECODER_REGEX = /(this\.maxStrLength=\w,)/;
-            const DECODER_INJECTION = `$1 console.log("[Util-Mod] ✅ CAPTURED DECODER!"), window.gameDecoder = this,`;
+            const DECODER_INJECTION = `$1 Logger.log("✅ CAPTURED DECODER!"), window.gameDecoder = this,`;
 
-            const leaveBackdoorOpen = (withinObserver) => {
+            /**
+             * Attempts to find and modify the game script to expose the codecs.
+             * If found, it disconnects the observer to prevent further attempts.
+             * @param {MutationObserver} [observer] - The MutationObserver instance to disconnect if the script is found.
+             */
+            const leaveBackdoorOpen = (observer) => {
+                if (this.state?.codecsReady) return Logger.log("Both codecs found already, cancelling interception method.", "color: #4CAF50;");
+
                 const targetScript = document.querySelector(`script[src*="${SCRIPT_SELECTOR}"]`);
                 if (targetScript) {
-                    if (withinObserver) obs.disconnect();
+                    if (observer) observer.disconnect();
                     
                     Logger.log(`Found game script: ${targetScript.src}`);
                     targetScript.type = 'text/plain'; // Neutralize the original script
-                    targetScript.remove();
 
-                    fetch(targetScript.src).then(res => res.text())
+                    fetch(targetScript.src)
+                    .then(res => res.text())
                     .then(scriptText => {
+                        if (this.state?.codecsReady) return Logger.log("Both codecs found already, cancelling interception method.", "color: #4CAF50;");
+
                         let modifiedScript = scriptText
                             .replace(ENCODER_REGEX, ENCODER_INJECTION)
                             .replace(DECODER_REGEX, DECODER_INJECTION);
 
-                        if (!modifiedScript.includes("window.gameEncoder") || !modifiedScript.includes("window.gameDecoder")) {
-                            Logger.error("Script injection failed! Regex patterns did not match.");
-                            return;
-                        }
-
+                        if (!modifiedScript.includes("window.gameEncoder") || !modifiedScript.includes("window.gameDecoder")) return Logger.error("Script injection failed! Regex patterns did not match.");
+                        
                         const newScript = document.createElement('script');
                         newScript.textContent = modifiedScript;
-                        document.addEventListener('DOMContentLoaded', () => document.head.append(newScript));
-                        Logger.log("Modified game script injected.", "color: #4CAF50;");
 
-                        // Verify capture and finalize setup
-                        setTimeout(() => {
-                            if (window.gameEncoder && window.gameDecoder) {
-                                Logger.log("Codec interception successful!", "color: #4CAF50; font-weight: bold;");
-                                
-                                this.state.gameEncoder = window.gameEncoder;
-                                this.state.gameDecoder = window.gameDecoder;
-                                this.state.codecsReady = true;
+                        // This is the function we want to run once the DOM is ready.
+                        const injectAndFinalize = () => {
+                            if (this.state?.codecsReady) return Logger.log("Both codecs found already, cancelling interception method.", "color: #4CAF50;");
 
-                                this.attemptFinalSetup();
-                            } else {
-                                Logger.error("Codecs were not found on window after injection.");
-                            }
-                        }, 100);
+                            // Make sure this only runs once, in case of any edge cases.
+                            if (document.body.contains(newScript)) return; 
+
+                            document.head.append(newScript);
+                            targetScript.remove();
+                        
+                            Logger.log("Modified game script injected.", "color: #4CAF50;");
+
+                            // Verify capture and finalize setup
+                            // Use setTimeout to allow the newly injected script to execute and populate the window object.
+                            setTimeout(() => {
+                                if (window.gameEncoder && window.gameDecoder) {
+                                    Logger.log(`Codec interception successful! ${Date.now() - this.state.initTimestamp}ms`, "color: #4CAF50; font-weight: bold;");
+                                    
+                                    this.state.gameEncoder = window.gameEncoder;
+                                    this.state.gameDecoder = window.gameDecoder;
+                                    this.state.codecsReady = true;
+
+                                    this.attemptFinalSetup();
+                                } else {
+                                    Logger.error("Codecs were not found on window after injection.");
+                                }
+                            }, 0);
+                        };
+
+                        // Check if the DOM is already loaded
+                        if (document.readyState === 'loading') {
+                            // DOM is not ready yet, so wait for the event
+                            document.addEventListener('DOMContentLoaded', injectAndFinalize);
+                        } else {
+                            // DOM is already ready, so execute the function immediately
+                            injectAndFinalize();
+                        }
                     })
                     .catch(err => {
                         Logger.error("Failed to fetch or process game script:", err);
@@ -977,9 +1195,7 @@ C = Added patches
                 } else { /* Fail silently */ };
             }
 
-            leaveBackdoorOpen(false);
-
-            const observer = new MutationObserver((mutations, obs) => leaveBackdoorOpen(true));
+            const observer = new MutationObserver((mutations, obs) => leaveBackdoorOpen(obs));
             observer.observe(document.documentElement, { childList: true, subtree: true });
         },
 
@@ -992,18 +1208,22 @@ C = Added patches
                 construct: (target, args) => {
                     const wsInstance = new target(...args);
 
-                    if (!this.state.gameEncoder || !this.state.gameDecoder) {
-                         // A final check. If by the time the WS is created NO method has worked, fail.
-                        this.handleHookFailureAndReload();
-                        return wsInstance;
+                    if (this.state.enabled) {
+                        if (this.state.gameEncoder && this.state.gameDecoder) {
+                            this.state.gameSocket = wsInstance;
+                            this.state.socketReady = true;
+                            
+                            Logger.log("Game WebSocket instance captured.");
+                            window.WebSocket = originalWebSocket; // Restore immediately
+                            this.attemptFinalSetup();
+                        }
+                        else {
+                            // A final check. If by the time the WS is created NO method has worked, fail.
+                            console.error("WebSocket created but codecs were not found. All hooking methods have failed.");
+                            this.handleHookFailureAndReload(true);
+                        }
                     }
 
-                    this.state.gameSocket = wsInstance;
-                    this.state.socketReady = true;
-                    
-                    Logger.log("Game WebSocket instance captured.");
-                    window.WebSocket = originalWebSocket; // Restore immediately
-                    this.attemptFinalSetup();
                     return wsInstance;
                 }
             });
@@ -1031,16 +1251,33 @@ C = Added patches
          * The main entry point for the script. Initializes data and sets up hooks.
          */
         init() {
-            Logger.log("--- MOOMOO.IO Utility Mod Initializing ---", "color: #ffb700; font-weight: bold;")
+            // Exposes the logger to the global window object for debugging purposes.
+            if (MooMooUtilityMod.config.DEBUG_MODE) window.Logger = Logger;
+            
+            Logger.log("--- MOOMOO.IO Utility Mod Initializing ---", "color: #ffb700; font-weight: bold;");
 
             // Attempts to find codecs by modifying the game script directly to open a backdoor.
             this.interceptGameScript();
 
             // Set up hooks to intercept codecs as they enter the global scope.
-             this.initializeHooks();
+            this.initializeHooks();
 
             // Set up WebSocket proxy to capture the game's WebSocket instance.
             this.setupWebSocketProxy();
+            
+            // If codecs aren't found within a reasonable amount of time, assume failure and prompt for reload.
+            this.waitForElementsToLoad({ mainMenu: this.data.constants.DOM.MAIN_MENU }).then(({ mainMenu }) => {
+                // We use time until main menu is loaded & visible, to get a good baseline for CPU/Network speeds.
+                this.waitForVisible(mainMenu).then(() => {
+                    setTimeout(() => {
+                        if (!this.state.codecsReady) {
+                            Logger.error("Hooks failed to find codecs within the time limit.");
+                            this.handleHookFailureAndReload();
+                            return;
+                        }
+                    }, (Date.now() - this.state.initTimestamp) * 2.5); // 2.5 is a very large multiplier, expected necessary delay would be 1.025 for the hooking method and 1.5 for the interception method.
+                });
+            });
 
             // Initialize item data and lookups
             this.data.initialize();
@@ -1064,7 +1301,7 @@ C = Added patches
             });
 
             // Exposes the core to the global window object for debugging purposes.
-            window.MooMooUtilityMod = this;
+            if (MooMooUtilityMod.config.DEBUG_MODE) window.MooMooUtilityMod = this;
         },
 
         // --- MINI-MOD MANAGEMENT ---
@@ -1218,7 +1455,7 @@ C = Added patches
          */
         handleInventoryScroll(event) {
             const CoreC = this.core.data.constants;
-            if (this._isInputFocused() || !this.core.state.gameSocket || this.core.state.gameSocket.readyState !== CoreC.GAME_STATE.WEBSOCKET_STATE_OPEN) return;
+            if (this.core.isInputFocused() || !this.core.state.gameSocket || this.core.state.gameSocket.readyState !== CoreC.GAME_STATE.WEBSOCKET_STATE_OPEN) return;
 
             event.preventDefault();
 
@@ -1235,7 +1472,7 @@ C = Added patches
             const CoreC = this.core.data.constants;
             const LocalC = this.constants;
 
-            if (this._isInputFocused()) return;
+            if (this.core.isInputFocused()) return;
 
             const pressedKey = event.key.toUpperCase();
             const actionBar = document.getElementById(CoreC.DOM.ACTION_BAR);
@@ -1267,7 +1504,7 @@ C = Added patches
          * @param {MouseEvent} event - The DOM mouse event.
          */
         handleItemClick(event) {
-            if (this._isInputFocused()) return;
+            if (this.core.isInputFocused()) return;
             const CoreC = this.core.data.constants;
             const clickedElement = event.target.closest(CoreC.DOM.ACTION_BAR_ITEM_CLASS);
             if (clickedElement && this.core.isEquippableItem(clickedElement)) {
@@ -1359,21 +1596,7 @@ C = Added patches
                 item.style.border = item === selectedItem ? LocalC.CSS.SELECTION_BORDER_STYLE : LocalC.CSS.BORDER_NONE;
                 item.style.filter = this.core.isEquippableItem(item) ? LocalC.CSS.FILTER_EQUIPPABLE : LocalC.CSS.FILTER_UNEQUIPPABLE;
             });
-        },
-
-        /**
-         * Checks if a user input element (like chat or menus) is currently focused.
-         * @private
-         * @returns {boolean} True if an input is focused, false otherwise.
-         */
-        _isInputFocused() {
-            const CoreC = this.core.data.constants;
-            const isVisible = (id) => {
-                const elem = document.getElementById(id);
-                return elem && elem.style.display === CoreC.CSS.DISPLAY_BLOCK;
-            };
-            return isVisible(CoreC.DOM.CHAT_HOLDER) || isVisible(CoreC.DOM.STORE_MENU) || isVisible(CoreC.DOM.ALLIANCE_MENU);
-        },
+        }
     };
 
     /**
@@ -1643,7 +1866,7 @@ C = Added patches
                 infoHolder.style.setProperty('--top-offset', isExpanded ? `${toolbar.offsetHeight + 20}px` : '0px');
             };
 
-            // Observer 1: Reacts to any change in the info holder's size (e.g., appearing/disappearing).
+            // Observer 1: Reacts to any change in the info holder's size (e.g; appearing/disappearing).
             const infoHolderObserver = new ResizeObserver(updatePosition);
             infoHolderObserver.observe(infoHolder);
 
@@ -1766,7 +1989,6 @@ C = Added patches
             if (id > 0) {
                 const buttonId = `${LocalC.DOM.WEARABLE_BUTTON_ID_PREFIX}${type}-${id}`;
                 const newSelectedBtn = document.getElementById(buttonId);
-                console
                 if (newSelectedBtn) newSelectedBtn.classList.add(LocalC.DOM.WEARABLE_SELECTED_CLASS);
             }
         },
@@ -2149,7 +2371,7 @@ C = Added patches
 
         /** Handles keydown events to start healing when the heal key is pressed. */
         handleKeyDown(event) {
-            if (this._isInputFocused() || event.key.toUpperCase() !== this.config.HEAL_KEY) return;
+            if (this.core.isInputFocused() || event.key.toUpperCase() !== this.config.HEAL_KEY) return;
             
             if (!this.state.isHealKeyHeld) {
                 this.state.isHealKeyHeld = true;
@@ -2208,18 +2430,6 @@ C = Added patches
                     this.core.sendGamePacket(CoreC.PACKET_TYPES.USE_ITEM, [CoreC.PACKET_DATA.USE_ACTIONS.STOP_USING]);
                 }
             }
-        },
-
-        // --- HELPER FUNCTIONS ---
-
-        /** Checks if any input fields or menus are currently focused/visible. */
-        _isInputFocused() {
-            const CoreC = this.core.data.constants;
-            const isVisible = (id) => {
-                const elem = document.getElementById(id);
-                return elem && elem.style.display === CoreC.CSS.DISPLAY_BLOCK;
-            };
-            return isVisible(CoreC.DOM.CHAT_HOLDER) || isVisible(CoreC.DOM.STORE_MENU) || isVisible(CoreC.DOM.ALLIANCE_MENU);
         }
     };
 
