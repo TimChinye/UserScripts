@@ -1,10 +1,10 @@
 // ==UserScript==
-// @name         MOOMOO.IO Utility Mod! (Scroll Wheel Inventory, Wearables Hotbar, Typing Indicator, More!)
+// @name         MOOMOO.IO Utility Mod! (Scrollable Inventory, Wearables Hotbar, Typing Indicator, More!)
 // @namespace    https://greasyfork.org/users/137913
 // @description  This mod adds a number of mini-mods to enhance your MooMoo.io experience whilst not being too unfair to non-script users.
 // @license      GNU GPLv3 with the condition: no auto-heal or instant kill features may be added to the licensed material.
 // @author       TigerYT
-// @version      0.8.2
+// @version      0.9.0
 // @grant        none
 // @match        *://moomoo.io/*
 // @match        *://dev.moomoo.io/*
@@ -34,7 +34,7 @@ C = Added patches
          * @param {string} message The message to log.
          * @param {...any} args Additional arguments to pass to console.log.
          */
-        log: (message, ...args) => MooMooUtilityMod.config.DEBUG_MODE && console.log((args[0]?.startsWith('color') ? '%c' : '') + `[Util-Mod] ${message}`, ...args),
+        log: (message, ...args) => MooMooUtilityMod.config.DEBUG_MODE && console.log((args[0] && typeof args[0] == "string" && args[0].startsWith('color') ? '%c' : '') + `[Util-Mod] ${message}`, ...args),
         /**
          * Logs an informational message.
          * @param {string} message The message to log.
@@ -111,6 +111,9 @@ C = Added patches
 
             /** @property {boolean} playerHasRespawned - Tracks if the player has respawned. */
             playerHasRespawned: false,
+
+            /** @property {Array<MutationObserver|ResizeObserver>} observers - Stores all active observers for easy cleanup. */
+            observers: [],
         },
 
         /**
@@ -433,6 +436,69 @@ C = Added patches
         // --- PUBLIC UTILITY FUNCTIONS ---
 
         /**
+         * Disables the entire utility mod, cleaning up all UI, styles, and event listeners.
+         */
+        disableMod() {
+            if (!this.state.enabled) return; // Already disabled
+            Logger.warn("Disabling MooMoo Utility Mod...");
+            this.state.enabled = false;
+
+            // 1. Cleanup minimods first
+            this.miniMods.forEach(mod => {
+                if (typeof mod.cleanup === 'function') {
+                    Logger.log(`Cleaning up minimod: ${mod.name}`);
+                    try {
+                        mod.cleanup();
+                    } catch (e) {
+                        Logger.error(`Error during cleanup of ${mod.name}:`, e);
+                    }
+                }
+            });
+
+            // 2. Cleanup core UI, styles, and observers
+            const CoreC = this.data.constants;
+            const utilityModStyles = document.getElementById(CoreC.DOM.UTILITY_MOD_STYLES);
+            if (utilityModStyles) utilityModStyles.remove();
+
+            const titleElem = document.getElementById(CoreC.DOM.GAME_TITLE);
+            if (titleElem) titleElem.innerHTML = 'MOOMOO.io';
+
+            const loadingInfo = document.getElementById(CoreC.DOM.LOADING_INFO);
+            if (loadingInfo) loadingInfo.remove();
+
+            this.state.observers.forEach(obs => obs.disconnect());
+            this.state.observers.length = 0; // Clear the array
+
+            // 3. Ensure all core UI element styles are unlocked
+            this.waitForElementsToLoad({
+                mainMenu: CoreC.DOM.MAIN_MENU,
+                menuCardHolder: CoreC.DOM.MENU_CARD_HOLDER,
+                loadingText: CoreC.DOM.LOADING_TEXT,
+                gameCanvas: CoreC.DOM.GAME_CANVAS,
+                gameUI: CoreC.DOM.GAME_UI,
+                diedText: CoreC.DOM.DIED_TEXT,
+            }).then(elements => {
+                this.unlockStyleUpdates("display", Object.values(elements));
+            });
+
+            Logger.warn("Mod disabled. Game reverted to vanilla state.");
+        },
+
+        /**
+         * Switches the UI to show the main menu.
+         */
+        goToMainMenu() {
+            this.setUIState('showMenu');
+        },
+
+        /**
+         * Switches the UI to show the in-game interface.
+         */
+        goToGamePlay() {
+            this.setUIState('showGameplay');
+        },
+
+        /**
          * Extracts the server-side item ID from a DOM element's ID attribute.
          * @param {HTMLElement} itemElem - The action bar item element.
          * @returns {RegExpMatchArray|null} A match array where index 1 is the ID, or null if no match.
@@ -548,14 +614,14 @@ C = Added patches
 
                 // Start observing the specific element for attribute changes
                 observer.observe(element, { attributes: true });
+                this.state.observers.push(observer);
             });
         },
 
         /**
          * Waits for a list of elements to be present in the DOM.
          * @param {Object<string, string>} elementMap - An object mapping desired variable names to element IDs.
-         * @returns {Promise<Object<string, HTMLElement>>} A promise that resolves with an object
-         * mapping the variable names to the found HTMLElements.
+         * @returns {Promise<Object<string, HTMLElement>>}
          */
         waitForElementsToLoad(elementMap) {
             return new Promise(resolve => {
@@ -596,6 +662,7 @@ C = Added patches
                     childList: true,
                     subtree: true
                 });
+                this.state.observers.push(observer);
             });
         },
 
@@ -713,6 +780,7 @@ C = Added patches
          * @param {any[]} data - The payload/data for the packet, typically an array of arguments.
          */
         sendGamePacket(type, data) {
+            if (!this.state.enabled) return; // Already disabled, no need to proceed.
 
             const CoreC = this.data.constants;
             try {
@@ -729,7 +797,8 @@ C = Added patches
          * @param {MessageEvent} event - The WebSocket message event containing the game data.
          */
         handleSocketMessage(event) {
-            if (!this.state.gameDecoder) return Logger.error("Game Decoder was not stored.", event, this);
+            if (!this.state.enabled || !this.state.gameDecoder) return; // Already disabled or already set up, no need to proceed.
+
             try {
                 const [packetID, ...argsArr] = this.state.gameDecoder.decode(new Uint8Array(event.data));
                 const args = argsArr[0]; // The game nests args in another array for some reason
@@ -785,9 +854,9 @@ C = Added patches
                     */
 
                     // These four periodically spam, very quickly too.
-                    const ignoredPackets = ['I', 'a', '0', '7', 'Z'];
+                    // const ignoredPackets = ['I', 'a', '0', '7', 'Z'];
                     // Some of these are period, some aren't, all are very frequent.
-                    // const ignoredPackets = ['I', 'a', '0', '7', 'Z', 'H', 'G', 'K', 'L', 'T'];
+                    const ignoredPackets = ['I', 'a', '0', '7', 'Z', 'H', 'G', 'K', 'L', 'T'];
                     if (ignoredPackets.includes(packetID.toString())) return;
                     // Other people get hurt / heal around you quite often, it's a little annoying:
                     // if (packetID.toString() === 'O' && packetData.playerID !== this.state.playerId) return;
@@ -865,14 +934,16 @@ C = Added patches
             const CoreC = this.data.constants;
 
             const setupUI = () => {
+                if (!this.state.enabled) return true; // Already disabled, no need to proceed.
+
                 const titleElem = document.getElementById(CoreC.DOM.GAME_TITLE);
-                if (titleElem) {
-                    // Update Title
-                    titleElem.innerHTML = `MOOMOO<span>.</span>io`;
-                    Logger.log("Updated game title screen.", "color: #4CAF50;");
-                    return true; // Indicate success
-                }
-                return false; // Indicate failure
+                if (!titleElem) return false; // Indicate failure
+                
+                // Update Title
+                titleElem.innerHTML = `MOOMOO<span>.</span>io`;
+                Logger.log("Updated game title screen.", "color: #4CAF50;");
+
+                return true; // Indicate success                
             };
 
             if (setupUI()) return;
@@ -882,77 +953,66 @@ C = Added patches
             });
 
             observer.observe(document.body, { childList: true, subtree: true });
+            this.state.observers.push(observer);
         },
 
         /**
-         * Centralized method to manage the visibility of UI elements.
-         * This prevents duplicating style logic across multiple methods.
+         * Centralized method to manage the visibility of core game UI elements.
+         * Allowing easy switching between gameplay, main menu, and loading/error screen.
          * @param {'showError' | 'showGameplay' | 'showMenu'} state The UI state to display.
          */
-        _setInfoUIState(state) {
+        setUIState(state) {
             const CoreC = this.data.constants;
-            
-            this.waitForElementsToLoad({
+            const elementIds = {
                 mainMenu: CoreC.DOM.MAIN_MENU,
                 menuCardHolder: CoreC.DOM.MENU_CARD_HOLDER,
                 loadingText: CoreC.DOM.LOADING_TEXT,
                 gameCanvas: CoreC.DOM.GAME_CANVAS,
                 gameUI: CoreC.DOM.GAME_UI,
                 diedText: CoreC.DOM.DIED_TEXT,
-                utilityModStyles: CoreC.DOM.UTILITY_MOD_STYLES
-            }).then(({ mainMenu, menuCardHolder, loadingText, gameCanvas, gameUI, diedText, utilityModStyles }) => {
-                const loadingInfo = document.getElementById(CoreC.DOM.LOADING_INFO);
-                
-                // Re-enable updating the element display types (if locked).
-                this.unlockStyleUpdates("display", [mainMenu, menuCardHolder, loadingText, gameCanvas, gameUI, diedText, utilityModStyles]);
+            };
 
+            this.waitForElementsToLoad(elementIds).then(elementsMap => {
+                const domElements = Object.values(elementsMap);
+
+                // Ensure styles are unlocked before changing them.
+                this.unlockStyleUpdates("display", domElements);
+
+                // Reset all to a blank slate.
                 document.body.style.backgroundImage = '';
-                menuCardHolder.style.display = 'none';
-                loadingText.style.display = 'none';
-                gameCanvas.style.display = 'none';
-                mainMenu.style.display = 'none';
-                gameUI.style.display = 'none';
+                domElements.forEach(el => el.style.display = 'none');
 
+                // Show only the elements necessary for each screen
                 switch (state) {
                     case 'showMenu':
-                        // Set visibility
-                        menuCardHolder.style.display = 'block';
-                        gameCanvas.style.display = 'block';
-                        mainMenu.style.display = 'block';
-
-                        // Perform actions
-                        utilityModStyles.remove();
-                        gameName.innerHTML = 'MOOMOO.io';
-                        if (loadingInfo) loadingInfo.remove();
+                        elementsMap.mainMenu.style.display = 'block';
+                        elementsMap.menuCardHolder.style.display = 'block';
+                        elementsMap.gameCanvas.style.display = 'block';
                         break;
 
                     case 'showGameplay':
-                        // Set visibility
-                        menuCardHolder.style.display = 'block';
-                        gameCanvas.style.display = 'block';
-                        gameUI.style.display = 'block';
-
-                        // Perform actions
-                        utilityModStyles.remove();
-                        gameName.innerHTML = 'MOOMOO.io';
-                        if (loadingInfo) loadingInfo.remove();
+                        elementsMap.gameUI.style.display = 'block';
+                        elementsMap.menuCardHolder.style.display = 'block';
+                        elementsMap.gameCanvas.style.display = 'block';
                         break;
 
                     case 'showError':
-                        // Set visibility
-                        mainMenu.style.display = 'block';
-                        loadingText.style.display = 'block';
-
-                        // Disable updating the element display types
-                        this.lockStyleUpdates("display", [mainMenu, menuCardHolder, loadingText, gameCanvas, gameUI, diedText, utilityModStyles]);
-
-                        // Perform actions
+                        elementsMap.mainMenu.style.display = 'block';
+                        elementsMap.loadingText.style.display = 'block';
                         document.body.style.backgroundImage = 'url("https://tinyurl.com/MooMooBackground")';
-                        if (loadingInfo) loadingText.childNodes[0].nodeValue = `Re-attempting Connection...`;
+
+                        if (this.state.enabled) {
+                            // Disable updating the element display types
+                            this.lockStyleUpdates("display", domElements);
+
+                            // Provide useful info to the user.
+                            const loadingInfo = document.getElementById(CoreC.DOM.LOADING_INFO);
+                            if (loadingInfo) elementsMap.loadingText.childNodes[0].nodeValue = `Re-attempting Connection...`;
+                        }
                         break;
 
                     default:
-                        Logger.error(`Invalid state provided: ${state}`);
+                        Logger.error(`Invalid UI state provided: ${state}`);
                         break;
                 }
             });
@@ -967,33 +1027,34 @@ C = Added patches
             const CoreC = this.data.constants;
 
             // Inject custom info element for the reload logic
+            const getLoadingInfoElem = () => document.getElementById(CoreC.DOM.LOADING_INFO);
             const menuContainer = document.getElementById(CoreC.DOM.MENU_CONTAINER);
-            const loadingInfoID = CoreC.DOM.LOADING_INFO;
-            if (menuContainer && !document.getElementById(loadingInfoID)) {
-                menuContainer.insertAdjacentHTML('beforeend', `<div id="${loadingInfoID}" style="display: none;"><br>${message}<br></div>`);
+            if (menuContainer && !getLoadingInfoElem()) {
+                menuContainer.insertAdjacentHTML('beforeend', `<div id="${CoreC.DOM.LOADING_INFO}" style="display: none;"><br>${message}<br></div>`);
                 
                 const loadingText = document.getElementById(CoreC.DOM.LOADING_TEXT);
                 const syncDisplayCallback = () => {
                     const newDisplayStyle = window.getComputedStyle(loadingText).display;
-                    if (loadingInfo.style.display !== newDisplayStyle) {
+                    if (getLoadingInfoElem().style.display !== newDisplayStyle) {
                         loadingInfo.style.display = newDisplayStyle;
                     }
                 };
 
                 const observer = new MutationObserver(syncDisplayCallback);
                 observer.observe(loadingText, { attributes: true, attributeFilter: ['style'] });
+                this.state.observers.push(observer);
             }
         },
 
         /**
          * Handles the scenario where the script fails to hook codecs. It displays
-         * a message and prompts for a reload. If the user does not enter the game, it will reload after a delay.
-         * @param {boolean} [afterGameEnter=false] - If true, waits for the user to fully enter the game before reloading.
-         * @returns {Promise<void>} A promise that resolves after handling the failure
+         * a message and prompts for a reload. If the user cancels, the mod will be disabled.
+         * @param {boolean} [afterGameEnter=false] - If true, the UI will revert to gameplay or main menu view on cancellation.
+         * @returns {Promise<void>}
          */
         async handleHookFailureAndReload(afterGameEnter = false) {
             if (!this.state.enabled) return; // Already disabled, no need to proceed.
-            
+
             const CoreC = this.data.constants;
 
             const { gameUI, mainMenu } = await this.waitForElementsToLoad({
@@ -1003,13 +1064,13 @@ C = Added patches
 
             if (afterGameEnter) await this.waitForVisible(gameUI);
             else await this.waitForVisible(mainMenu);
-            
+
             Logger.error("All hooking methods failed. The script cannot function. Reloading...");
             this._updateLoadingUI("Couldn't intercept in time. May be a network issue. Try not entering the game so fast.");
-            this._setInfoUIState('showError');
-            
+            this.setUIState('showError');
+
             await this.wait(5000);
-            
+
             const loadingInfo = document.getElementById(CoreC.DOM.LOADING_INFO);
             if (loadingInfo) {
                 loadingInfo.append("If you cancel, you can play the game as normal - without the mod enabled.");
@@ -1020,14 +1081,17 @@ C = Added patches
 
             if (afterGameEnter || window.confirm("Are you sure you want to reload?")) {
                 window.location.reload();
+            } else {
+                // User cancelled the reload. Disable the mod and restore the UI - play like normal.
+                Logger.warn("User cancelled reload. Disabling mod.");
+                this.disableMod();
+                
+                if (afterGameEnter) {
+                    this.setUIState('showGameplay');
+                } else {
+                    this.setUIState('showMenu');
+                }
             }
-
-            setTimeout(() => {
-                this.state.enabled = false; // Disable mod, continue playing.
-
-                if (afterGameEnter) this._setInfoUIState('showGameplay'), Logger.log("Reverted to gameplay UI.");
-                else this._setInfoUIState('showMenu'), Logger.log("Reverted to menu UI.");
-            }, 0);
         },
 
         /**
@@ -1036,7 +1100,7 @@ C = Added patches
          * we don't try to attach listeners prematurely.
          */
         attemptFinalSetup() {
-            if (!this.state.codecsReady || !this.state.socketReady) return;
+            if (!this.state.enabled || !this.state.codecsReady || !this.state.socketReady) return; // Already disabled or already set up, no need to proceed.
 
             Logger.log("Codecs and WebSocket are ready. Attaching all listeners.", "color: #ffb700;");
             this.state.gameSocket.addEventListener('message', this.handleSocketMessage.bind(this));
@@ -1054,13 +1118,16 @@ C = Added patches
          * @param {Function} onFound - The callback to execute when the object is found.
          */
         hookIntoPrototype(propName, onFound) {
+            if (!this.state.enabled) return; // Already disabled, no need to proceed.
+            
             Logger.log(`Setting up prototype hook for: ${propName}`);
             if (this.state?.codecsReady) return Logger.log("Both codecs found already, cancelling prototype hooks method.", "color: #4CAF50;");
             
             const originalDesc = Object.getOwnPropertyDescriptor(Object.prototype, propName);
             Object.defineProperty(Object.prototype, propName, {
                 set(value) {
-                    if (this.state?.codecsReady) return Logger.log("Both codecs found already, cancelling prototype hooks method.", "color: #4CAF50;");
+                    if (!MooMooUtilityMod.state.enabled) return; // Already disabled, no need to proceed.
+                    if (MooMooUtilityMod.state.codecsReady) return Logger.log("Both codecs found already, cancelling prototype hooks method.", "color: #4CAF50;");
                     
                     // Restore the prototype to its original state *before* doing anything else.
                     // This prevents unexpected side effects and race conditions within the hook itself.
@@ -1089,8 +1156,6 @@ C = Added patches
          * Sets up hooks into Object.prototype to capture the game's msgpack encoder and decoder.
          */
         initializeHooks() {
-            const CoreC = this.data.constants;
-
             // Set up prototype hooks for both encoder and decoder
             const onCodecFound = () => {
                 if (this.state.gameEncoder && this.state.gameDecoder) {
@@ -1108,12 +1173,10 @@ C = Added patches
 
         /**
          * Attempts to intercept and modify the game's main script to inject code that exposes
-         * the msgpack encoder and decoder to the global window object. This is a more invasive
-         * method that involves fetching the script, modifying its text, and reinserting it into the DOM.
-         * It also sets up a MutationObserver to catch the script if it is added later. 
-         * If successful, it stores the codecs and attempts final setup.
+         * the msgpack encoder and decoder to the global window object.
          */
         interceptGameScript() {
+            if (!this.state.enabled) return; // Already disabled, no need to proceed.
             Logger.log("Attempting to intercept and modify the game script...");
 
             const SCRIPT_SELECTOR = "/assets/index-eb87bff7.js";
@@ -1128,7 +1191,8 @@ C = Added patches
              * @param {MutationObserver} [observer] - The MutationObserver instance to disconnect if the script is found.
              */
             const leaveBackdoorOpen = (observer) => {
-                if (this.state?.codecsReady) return Logger.log("Both codecs found already, cancelling interception method.", "color: #4CAF50;");
+                if (!this.state.enabled) return; // Already disabled, no need to proceed.
+                if (this.state?.codecsReady) return Logger.log("Both codecs found already, cancelling prototype hooks method.", "color: #4CAF50;");
 
                 const targetScript = document.querySelector(`script[src*="${SCRIPT_SELECTOR}"]`);
                 if (targetScript) {
@@ -1140,27 +1204,29 @@ C = Added patches
                     fetch(targetScript.src)
                     .then(res => res.text())
                     .then(scriptText => {
-                        if (this.state?.codecsReady) return Logger.log("Both codecs found already, cancelling interception method.", "color: #4CAF50;");
+                        if (!this.state.enabled) return; // Already disabled, no need to proceed.
+                        if (this.state?.codecsReady) return Logger.log("Both codecs found already, cancelling prototype hooks method.", "color: #4CAF50;");
 
                         let modifiedScript = scriptText
                             .replace(ENCODER_REGEX, ENCODER_INJECTION)
                             .replace(DECODER_REGEX, DECODER_INJECTION);
-
+                            
                         if (!modifiedScript.includes("window.gameEncoder") || !modifiedScript.includes("window.gameDecoder")) return Logger.error("Script injection failed! Regex patterns did not match.");
-                        
+
                         const newScript = document.createElement('script');
                         newScript.textContent = modifiedScript;
 
                         // This is the function we want to run once the DOM is ready.
                         const injectAndFinalize = () => {
-                            if (this.state?.codecsReady) return Logger.log("Both codecs found already, cancelling interception method.", "color: #4CAF50;");
+                            if (!this.state.enabled) return; // Already disabled, no need to proceed.
+                            if (this.state?.codecsReady) return Logger.log("Both codecs found already, cancelling prototype hooks method.", "color: #4CAF50;");
 
                             // Make sure this only runs once, in case of any edge cases.
                             if (document.body.contains(newScript)) return; 
 
                             document.head.append(newScript);
                             targetScript.remove();
-                        
+                            
                             Logger.log("Modified game script injected.", "color: #4CAF50;");
 
                             // Verify capture and finalize setup
@@ -1197,6 +1263,7 @@ C = Added patches
 
             const observer = new MutationObserver((mutations, obs) => leaveBackdoorOpen(obs));
             observer.observe(document.documentElement, { childList: true, subtree: true });
+            this.state.observers.push(observer);
         },
 
         /**
@@ -1231,9 +1298,10 @@ C = Added patches
 
         /**
          * Runs once the WebSocket is established and the player has spawned.
-         * Performs initial setup that requires the DOM to be populated, like UI tweaks and scraping initial resources.
          */
         onGameReady() {
+            if (!this.state.enabled) return; // Already disabled, no need to proceed.
+            
             try {
                 // Notify minimods that the game is ready
                 this.miniMods.forEach(mod => {
@@ -1257,10 +1325,10 @@ C = Added patches
             Logger.log("--- MOOMOO.IO Utility Mod Initializing ---", "color: #ffb700; font-weight: bold;");
 
             // Attempts to find codecs by modifying the game script directly to open a backdoor.
-            this.interceptGameScript();
+            this.interceptGameScript(); // Typically succeeds 0.025x slower than mainMenu. 
 
             // Set up hooks to intercept codecs as they enter the global scope.
-            this.initializeHooks();
+            this.initializeHooks(); // Typically succeeds 0.5x slower than mainMenu. 
 
             // Set up WebSocket proxy to capture the game's WebSocket instance.
             this.setupWebSocketProxy();
@@ -1270,12 +1338,12 @@ C = Added patches
                 // We use time until main menu is loaded & visible, to get a good baseline for CPU/Network speeds.
                 this.waitForVisible(mainMenu).then(() => {
                     setTimeout(() => {
+                        if (!this.state.enabled) return; // Already disabled
                         if (!this.state.codecsReady) {
                             Logger.error("Hooks failed to find codecs within the time limit.");
                             this.handleHookFailureAndReload();
-                            return;
                         }
-                    }, (Date.now() - this.state.initTimestamp) * 2.5); // 2.5 is a very large multiplier, expected necessary delay would be 1.025 for the hooking method and 1.5 for the interception method.
+                    }, (Date.now() - this.state.initTimestamp) * 2.5); // If no success after 1.5x the mainMenu, assume failure.
                 });
             });
 
@@ -1354,6 +1422,8 @@ C = Added patches
             selectedItemIndex: -1,
             /** @property {number} lastSelectedWeaponIndex - The index of the last selected weapon, used to auto-switch back after using an item. */
             lastSelectedWeaponIndex: -1,
+            /** JSDoc comment-less */
+            boundHandlers: {},
         },
 
         // --- MINI-MOD LIFECYCLE & HOOKS ---
@@ -1419,9 +1489,24 @@ C = Added patches
          */
         addEventListeners() {
             const CoreC = this.core.data.constants;
-            document.addEventListener('wheel', this.handleInventoryScroll.bind(this), { passive: false });
-            document.addEventListener('keydown', this.handleKeyPress.bind(this));
-            document.getElementById(CoreC.DOM.ACTION_BAR).addEventListener('click', this.handleItemClick.bind(this));
+
+            this.state.boundHandlers.handleInventoryScroll = this.handleInventoryScroll.bind(this);
+            this.state.boundHandlers.handleKeyPress = this.handleKeyPress.bind(this);
+            this.state.boundHandlers.handleItemClick = this.handleItemClick.bind(this);
+
+            document.addEventListener('wheel', this.state.boundHandlers.handleInventoryScroll, { passive: false });
+            document.addEventListener('keydown', this.state.boundHandlers.handleKeyPress);
+            document.getElementById(CoreC.DOM.ACTION_BAR).addEventListener('click', this.state.boundHandlers.handleItemClick);
+        },
+
+        cleanup() {
+            const CoreC = this.core.data.constants;
+            document.removeEventListener('wheel', this.state.boundHandlers.handleInventoryScroll);
+            document.removeEventListener('keydown', this.state.boundHandlers.handleKeyPress);
+            const actionBar = document.getElementById(CoreC.DOM.ACTION_BAR);
+            if (actionBar) {
+                actionBar.removeEventListener('click', this.state.boundHandlers.handleItemClick);
+            }
         },
 
         /**
@@ -1433,7 +1518,7 @@ C = Added patches
             // Wait for Game UI to load before proceeding
             const gameUI = document.getElementById(CoreC.DOM.GAME_UI);
             this.core.waitForVisible(gameUI).then(() => {
-                // --- Scrape initial state from the DOM ---
+                // Scrape initial state from the DOM
                 const resElements = document.getElementById(CoreC.DOM.RESOURCE_DISPLAY).children;
                 this.core.state.playerResources = {
                     food: parseInt(resElements[0].textContent) || 0,
@@ -1442,7 +1527,7 @@ C = Added patches
                     gold: parseInt(resElements[3].textContent) || 0,
                 };
 
-                // --- Perform initial actions ---
+                // Set the initial selected item
                 this.selectItemByIndex(CoreC.GAME_STATE.INITIAL_SELECTED_ITEM_INDEX);
             });
         },
@@ -1667,6 +1752,10 @@ C = Added patches
             pinnedWearables: new Set(),
             /** @property {HTMLElement|null} draggedItem - The wearable button element currently being dragged. */
             draggedItem: null,
+            /** JSDoc comment-less */
+            boundHandlers: {},
+            /** JSDoc comment-less */
+            observers: [],
         },
 
         // --- MINI-MOD LIFECYCLE & HOOKS ---
@@ -1810,6 +1899,18 @@ C = Added patches
             }
         },
 
+        /** JSDoc comment-less */
+        cleanup() {
+            const CoreC = this.core.data.constants;
+            const LocalC = this.constants;
+            document.getElementById(CoreC.DOM.STORE_MENU)?.style.removeProperty('transform');
+            document.getElementById(LocalC.DOM.WEARABLES_TOOLBAR)?.remove();
+            document.querySelectorAll(LocalC.DOM.PIN_BUTTON_CLASS).forEach((pinElem) => pinElem.remove());
+            document.removeEventListener('keydown', this.state.boundHandlers.handleKeyDown);
+            this.state.observers.forEach(obs => obs.disconnect());
+            this.state.observers.length = 0;
+        },
+
         // --- INITIAL UI SETUP ---
 
         /**
@@ -1835,16 +1936,16 @@ C = Added patches
             hatsGrid.addEventListener('dragover', this.handleDragOver.bind(this));
             accessoriesGrid.addEventListener('dragover', this.handleDragOver.bind(this));
 
-            document.addEventListener('keydown', (e) => {
-                const visibleInputs = [CoreC.DOM.CHAT_HOLDER, CoreC.DOM.ALLIANCE_MENU, CoreC.DOM.STORE_MENU];
-                const isInputFocused = visibleInputs.some(id => document.getElementById(id)?.style.display === CoreC.CSS.DISPLAY_BLOCK);
-                if (isInputFocused) return;
+            this.state.boundHandlers.handleKeyDown = (e) => {
+                if (this.core.isInputFocused()) return;
 
                 if (e.key.toUpperCase() === LocalC.HOTKEYS.TOGGLE_WEARABLES) {
                     this.state.isVisible = !this.state.isVisible;
                     container.style.display = this.state.isVisible ? CoreC.CSS.DISPLAY_BLOCK : CoreC.CSS.DISPLAY_NONE;
                 }
-            });
+            };
+
+            document.addEventListener('keydown', this.state.boundHandlers.handleKeyDown);
         },
         
         /**
@@ -1856,10 +1957,7 @@ C = Added patches
             const toolbar = document.getElementById(LocalC.DOM.WEARABLES_TOOLBAR);
             const infoHolder = document.getElementById(LocalC.DOM.ITEM_INFO_HOLDER);
 
-            if (!toolbar || !infoHolder) {
-                Logger.warn("Could not find toolbar or info holder for dynamic positioning.");
-                return;
-            }
+            if (!toolbar || !infoHolder) return Logger.warn("Could not find toolbar or info holder for dynamic positioning.");
 
             const updatePosition = () => {
                 const isExpanded = infoHolder.offsetHeight > 0;
@@ -1869,6 +1967,7 @@ C = Added patches
             // Observer 1: Reacts to any change in the info holder's size (e.g; appearing/disappearing).
             const infoHolderObserver = new ResizeObserver(updatePosition);
             infoHolderObserver.observe(infoHolder);
+            this.state.observers.push(infoHolderObserver);
 
             // Observer 2: Reacts to significant changes in the toolbar's height,
             // which happens when a new row of wearables is pinned.
@@ -1882,6 +1981,7 @@ C = Added patches
                 }
             });
             toolbarObserver.observe(toolbar);
+            this.state.observers.push(toolbarObserver);
 
             // Run once at the start to set the initial position.
             updatePosition();
@@ -1900,14 +2000,16 @@ C = Added patches
             const initialCheck = () => {
                 const upgradeHolderVisible = upgradeHolder.style.display === CoreC.CSS.DISPLAY_BLOCK;
                 const upgradeCounterVisible = upgradeCounter.style.display === CoreC.CSS.DISPLAY_BLOCK;
+                
                 const isExpanded = upgradeHolderVisible && upgradeCounterVisible;
                 storeMenu.classList.toggle(CoreC.DOM.STORE_MENU_EXPANDED_CLASS, isExpanded);
             };
 
+            initialCheck();
             const upgradeObserver = new MutationObserver(initialCheck);
             upgradeObserver.observe(upgradeHolder, { attributes: true, attributeFilter: ['style'] });
             upgradeObserver.observe(upgradeCounter, { attributes: true, attributeFilter: ['style'] });
-            initialCheck();
+            this.state.observers.push(upgradeObserver);
 
             const storeMenuObserver = new MutationObserver((mutationsList) => {
                 for (const mutation of mutationsList) {
@@ -1917,9 +2019,11 @@ C = Added patches
                 }
             });
             storeMenuObserver.observe(storeMenu, { attributes: true, attributeFilter: ['style'], attributeOldValue: true });
+            this.state.observers.push(storeMenuObserver);
 
             const storeHolderObserver = new MutationObserver(() => this.addPinButtons());
             storeHolderObserver.observe(document.getElementById(CoreC.DOM.STORE_HOLDER), { childList: true });
+            this.state.observers.push(storeHolderObserver);
         },
         
         // --- UI MANIPULATION & STATE UPDATES ---
@@ -1988,6 +2092,7 @@ C = Added patches
 
             if (id > 0) {
                 const buttonId = `${LocalC.DOM.WEARABLE_BUTTON_ID_PREFIX}${type}-${id}`;
+                
                 const newSelectedBtn = document.getElementById(buttonId);
                 if (newSelectedBtn) newSelectedBtn.classList.add(LocalC.DOM.WEARABLE_SELECTED_CLASS);
             }
@@ -1997,8 +2102,8 @@ C = Added patches
         refreshToolbarVisibility() {
             const LocalC = this.constants;
             const CoreC = this.core.data.constants;
+            
             const allButtons = document.querySelectorAll(`.${LocalC.DOM.WEARABLE_BUTTON_CLASS}`);
-
             allButtons.forEach(btn => {
                 const buttonId = parseInt(btn.dataset.wearableId);
                 if (!isNaN(buttonId)) {
@@ -2014,22 +2119,20 @@ C = Added patches
          */
         addPinButtons() {
             const CoreC = this.core.data.constants;
-            const wearablesMod = this.core.miniMods.find(m => m.name === "Wearables Toolbar");
-            if (!wearablesMod) return;
-
-            const LocalC = wearablesMod.constants; // Wearables Constants
+            const LocalC = this.constants;
+            
             const storeHolder = document.getElementById(CoreC.DOM.STORE_HOLDER);
-
             Array.from(storeHolder.children).forEach((storeItem) => {
+                const wearableIcon = storeItem.querySelector('img');
                 const joinBtn = storeItem.querySelector('.' + LocalC.DOM.JOIN_ALLIANCE_BUTTON_CLASS);
-                const img = storeItem.querySelector('img');
-
-                if (storeItem.querySelector(`.${LocalC.DOM.PIN_BUTTON_CLASS}`)) return;
-                if (!joinBtn || !img || !joinBtn.textContent.toLowerCase().includes(LocalC.TEXT.EQUIP_BUTTON_TEXT)) return;
-
+                const hasPinButton = storeItem.querySelector(`.${LocalC.DOM.PIN_BUTTON_CLASS}`);
+                const isNotEquipButton = !joinBtn || !joinBtn.textContent.toLowerCase().includes(LocalC.TEXT.EQUIP_BUTTON_TEXT);
+                
+                // Check if eligible for a new pin button.
+                if (!wearableIcon || hasPinButton || isNotEquipButton) return;
                 let id, type;
-                const hatMatch = img.src.match(LocalC.REGEX.HAT_IMG);
-                const accMatch = img.src.match(LocalC.REGEX.ACCESSORY_IMG);
+                const hatMatch = wearableIcon.src.match(LocalC.REGEX.HAT_IMG);
+                const accMatch = wearableIcon.src.match(LocalC.REGEX.ACCESSORY_IMG);
 
                 if (hatMatch) {
                     id = parseInt(hatMatch[1]);
@@ -2041,18 +2144,14 @@ C = Added patches
                     return; // Not a wearable item
                 }
 
-                const isPinned = wearablesMod.isWearablePinned(id);
                 const pinButton = document.createElement('div');
                 pinButton.className = `${LocalC.DOM.JOIN_ALLIANCE_BUTTON_CLASS} ${LocalC.DOM.PIN_BUTTON_CLASS}`;
                 pinButton.style.marginTop = '5px';
-                pinButton.textContent = isPinned ? LocalC.TEXT.UNPIN : LocalC.TEXT.PIN;
-
+                pinButton.textContent = this.isWearablePinned(id) ? LocalC.TEXT.UNPIN : LocalC.TEXT.PIN;
                 pinButton.addEventListener('click', () => {
-                    const isNowPinned = wearablesMod.togglePin(id, type);
-                    pinButton.textContent = isNowPinned ? LocalC.TEXT.UNPIN : LocalC.TEXT.PIN;
-                    wearablesMod.refreshToolbarVisibility();
+                    pinButton.textContent = this.togglePin(id, type) ? LocalC.TEXT.UNPIN : LocalC.TEXT.PIN;
+                    this.refreshToolbarVisibility();
                 });
-
                 joinBtn.insertAdjacentElement('afterend', pinButton);
             });
         },
@@ -2136,8 +2235,7 @@ C = Added patches
 
     /**
      * @module TypingIndicatorMiniMod
-     * @description Shows a "..." typing indicator in chat while the user is typing,
-     * while respecting the game's chat rate limit to ensure user messages are prioritized.
+     * @description Shows a "..." typing indicator in chat while the user is typing.
      */
     const TypingIndicatorMiniMod = {
         
@@ -2169,6 +2267,7 @@ C = Added patches
             animationFrameIndex: 0,
             lastMessageSentTime: 0,
             messageQueue: [],
+            boundHandlers: {},
         },
 
         // --- MINI-MOD LIFECYCLE & HOOKS ---
@@ -2179,19 +2278,30 @@ C = Added patches
          */
         addEventListeners() {
             this.state.chatBoxElement = document.getElementById('chatBox');
+            if (!this.state.chatBoxElement) return Logger.error("Could not find chatBox element. Mod will not function.");
 
-            if (!this.state.chatBoxElement) {
-                Logger.error("Could not find chatBox element. Mod will not function.");
-                return;
-            }
+            this.state.boundHandlers.handleFocus = this.handleFocus.bind(this);
+            this.state.boundHandlers.handleBlur = this.handleBlur.bind(this);
+            this.state.boundHandlers.handleKeyDown = this.handleKeyDown.bind(this);
 
-            this.state.chatBoxElement.addEventListener('focus', this.handleFocus.bind(this));
-            this.state.chatBoxElement.addEventListener('blur', this.handleBlur.bind(this));
-            this.state.chatBoxElement.addEventListener('keydown', this.handleKeyDown.bind(this));
+            this.state.chatBoxElement.addEventListener('focus', this.state.boundHandlers.handleFocus);
+            this.state.chatBoxElement.addEventListener('blur', this.state.boundHandlers.handleBlur);
+            this.state.chatBoxElement.addEventListener('keydown', this.state.boundHandlers.handleKeyDown);
             
             // Start the queue processor, which will run continuously to send queued messages.
             this.startQueueProcessor();
-            Logger.log("Event listeners attached and queue processor started.");
+            Logger.log("Typing indicator event listeners attached and queue processor started.");
+        },
+
+        cleanup() {
+            clearInterval(this.state.indicatorIntervalId);
+            clearInterval(this.state.queueProcessorIntervalId);
+            clearTimeout(this.state.startIndicatorTimeoutId);
+            if (this.state.chatBoxElement) {
+                this.state.chatBoxElement.removeEventListener('focus', this.state.boundHandlers.handleFocus);
+                this.state.chatBoxElement.removeEventListener('blur', this.state.boundHandlers.handleBlur);
+                this.state.chatBoxElement.removeEventListener('keydown', this.state.boundHandlers.handleKeyDown);
+            }
         },
 
         // --- EVENT HANDLERS ---
@@ -2351,20 +2461,22 @@ C = Added patches
             isHealKeyHeld: false,
             healIntervalId: null,
             lastHealTime: 0,
+            boundHandlers: {}
         },
 
         // --- MINI-MOD LIFECYCLE & HOOKS ---
 
-        /** Called when the minimod is registered. Sets up event listeners. */
-        init() {
-            // This is where you could load settings from localStorage if you had them
-            this.addEventListeners();
-        },
-
         /** Sets up key event listeners for starting/stopping healing. */
         addEventListeners() {
-            document.addEventListener('keydown', this.handleKeyDown.bind(this));
-            document.addEventListener('keyup', this.handleKeyUp.bind(this));
+            this.state.boundHandlers.handleKeyDown = this.handleKeyDown.bind(this);
+            this.state.boundHandlers.handleKeyUp = this.handleKeyUp.bind(this);
+            document.addEventListener('keydown', this.state.boundHandlers.handleKeyDown);
+            document.addEventListener('keyup', this.state.boundHandlers.handleKeyUp);
+        },
+        cleanup() {
+            this.stopHealing();
+            document.removeEventListener('keydown', this.state.boundHandlers.handleKeyDown);
+            document.removeEventListener('keyup', this.state.boundHandlers.handleKeyUp);
         },
 
         // --- EVENT HANDLERS ---
@@ -2394,6 +2506,7 @@ C = Added patches
             if (this.state.healIntervalId) return; // Already healing
 
             Logger.log("Starting Assisted Heal.", "color: #00e676;");
+            
             // Immediately try to heal once, then start the interval
             this.attemptHeal();
             this.state.healIntervalId = setInterval(this.attemptHeal.bind(this), this.config.HEAL_INTERVAL);
