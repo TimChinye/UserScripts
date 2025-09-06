@@ -4,7 +4,7 @@
 // @description  This mod adds a number of mini-mods to enhance your MooMoo.io experience whilst not being too unfair to non-script users.
 // @license      GNU GPLv3 with the condition: no auto-heal or instant kill features may be added to the licensed material.
 // @author       TigerYT
-// @version      0.8.1
+// @version      0.8.2
 // @grant        none
 // @match        *://moomoo.io/*
 // @match        *://dev.moomoo.io/*
