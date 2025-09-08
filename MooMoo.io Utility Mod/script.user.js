@@ -4,7 +4,7 @@
 // @description  This mod adds a number of mini-mods to enhance your MooMoo.io experience whilst not being too unfair to non-script users.
 // @license      GNU GPLv3 with the condition: no auto-heal or instant kill features may be added to the licensed material.
 // @author       TigerYT
-// @version      0.9.0
+// @version      0.9.1
 // @grant        none
 // @match        *://moomoo.io/*
 // @match        *://dev.moomoo.io/*
@@ -30,36 +30,36 @@ C = Added patches
      */
     const Logger = {
         /**
-         * Logs a standard message.
-         * @param {string} message The message to log.
-         * @param {...any} args Additional arguments to pass to console.log.
+         * Logs a standard message to the console if DEBUG_MODE is enabled.
+         * @param {string} message - The primary message to log.
+         * @param {...any} args - Additional arguments to pass directly to console.log.
          */
         log: (message, ...args) => MooMooUtilityMod.config.DEBUG_MODE && console.log((args[0] && typeof args[0] == "string" && args[0].startsWith('color') ? '%c' : '') + `[Util-Mod] ${message}`, ...args),
         /**
-         * Logs an informational message.
-         * @param {string} message The message to log.
-         * @param {...any} args Additional arguments to pass to console.info.
+         * Logs an informational message to the console if DEBUG_MODE is enabled.
+         * @param {string} message - The primary message to log.
+         * @param {...any} args - Additional arguments to pass directly to console.info.
          */
-        info: (message, ...args) => MooMooUtilityMod.config.DEBUG_MODE && console.info(`%c[Util-Mod] ${message}`, ...args),
+        info: (message, ...args) => MooMooUtilityMod.config.DEBUG_MODE && console.info((args[0] && typeof args[0] == "string" && args[0].startsWith('color') ? '%c' : '') + `[Util-Mod] ${message}`, ...args),
         /**
-         * Logs a warning.
-         * @param {string} message The message to log.
-         * @param {...any} args Additional arguments to pass to console.warn.
+         * Logs a warning message to the console if DEBUG_MODE is enabled.
+         * @param {string} message - The primary message to log.
+         * @param {...any} args - Additional arguments to pass directly to console.warn.
          */
-        warn: (message, ...args) => MooMooUtilityMod.config.DEBUG_MODE && console.warn(`[Util-Mod] ${message}`, ...args),
+        warn: (message, ...args) => MooMooUtilityMod.config.DEBUG_MODE && console.warn((args[0] && typeof args[0] == "string" && args[0].startsWith('color') ? '%c' : '') + `[Util-Mod] ${message}`, ...args),
         /**
-         * Logs an error. Always shown regardless of DEBUG_MODE.
-         * @param {string} message The message to log.
-         * @param {...any} args Additional arguments to pass to console.error.
+         * Logs an error message. This is always shown, regardless of the DEBUG_MODE setting.
+         * @param {string} message - The primary message to log.
+         * @param {...any} args - Additional arguments to pass directly to console.error.
          */
-        error: (message, ...args) => console.error(`[Util-Mod] ${message}`, ...args),
+        error: (message, ...args) => console.error((args[0] && typeof args[0] == "string" && args[0].startsWith('color') ? '%c' : '') + `[Util-Mod] ${message}`, ...args)
     };
 
     /**
-     * @module MooMooUtilityMod
-     * @description The core of the utility mod. It manages shared state, data, network hooks,
-     * and initializes all registered "minimods".
-     */
+      * @module MooMooUtilityMod
+      * @description The core of the utility mod. It manages shared state, data, network hooks,
+      * and initializes all registered "minimods".
+      */
     const MooMooUtilityMod = {
 
         // --- CORE MOD PROPERTIES ---
@@ -76,31 +76,31 @@ C = Added patches
          * @property {object} state - Holds the dynamic state of the script, changing as the user plays.
          */
         state: {
-            /** @property {boolean} enabled - Master toggle for the entire utility mod. */
+            /** @property {boolean} enabled - Master toggle for the entire utility mod. Set to false to disable all features. */
             enabled: true,
 
-            /** @property {number} initTimestamp - The timestamp when the script was initiated. */
+            /** @property {number} initTimestamp - The UNIX timestamp (in milliseconds) when the script was initiated. */
             initTimestamp: Date.now(),
             
-            /** @property {boolean} codecsReady - Tracks if the msgpack encoder and decoder have been found. */
+            /** @property {boolean} codecsReady - Tracks if the msgpack encoder and decoder instances have been successfully captured. */
             codecsReady: false,
 
-            /** @property {boolean} socketReady - Tracks if the game's WebSocket instance has been captured. */
+            /** @property {boolean} socketReady - Tracks if the game's WebSocket instance has been successfully captured. */
             socketReady: false,
 
-            /** @property {boolean} isSandbox - Tracks if the player is in sandbox mode for item limits. */
+            /** @property {boolean} isSandbox - Tracks if the player is in sandbox mode, which affects item placement limits. */
             isSandbox: window.location.host.startsWith('sandbox'),
 
-            /** @property {WebSocket|null} gameSocket - A reference to the game's main WebSocket instance. */
+            /** @property {WebSocket|null} gameSocket - A direct reference to the game's main WebSocket instance. */
             gameSocket: null,
 
-            /** @property {object|null} gameEncoder - A reference to the game's msgpack encoder instance. */
+            /** @property {object|null} gameEncoder - A direct reference to the game's msgpack encoder instance. */
             gameEncoder: null,
 
-            /** @property {object|null} gameDecoder - A reference to the game's msgpack decoder instance. */
+            /** @property {object|null} gameDecoder - A direct reference to the game's msgpack decoder instance. */
             gameDecoder: null,
 
-            /** @property {number} playerId - The client player's unique ID assigned by the server. */
+            /** @property {number} playerId - The client player's unique server-side ID, assigned upon joining a game. */
             playerId: -1,
 
             /** @property {{food: number, wood: number, stone: number, gold: number}} playerResources - The player's current resource counts. */
@@ -109,10 +109,10 @@ C = Added patches
             /** @property {Map<number, number>} playerPlacedItemCounts - Maps an item's limit group ID to the number of items placed from that group. */
             playerPlacedItemCounts: new Map(),
 
-            /** @property {boolean} playerHasRespawned - Tracks if the player has respawned. */
+            /** @property {boolean} playerHasRespawned - Tracks if the player has died and respawned, used to manage certain UI elements. */
             playerHasRespawned: false,
 
-            /** @property {Array<MutationObserver|ResizeObserver>} observers - Stores all active observers for easy cleanup. */
+            /** @property {Array<MutationObserver|ResizeObserver>} observers - Stores all active observers for easy disconnection and cleanup when the mod is disabled. */
             observers: [],
         },
 
@@ -123,7 +123,7 @@ C = Added patches
             /** @property {Map<number, object>} _itemDataByServerId - A map for quickly looking up item data by its server-side ID. */
             _itemDataByServerId: new Map(),
 
-            /** @property {Map<number, object[]>} _itemDataBySlot - A map for grouping items by their action bar slot. */
+            /** @property {Map<number, object[]>} _itemDataBySlot - A map for grouping items by their action bar slot (e.g., Food, Walls, Spikes). */
             _itemDataBySlot: new Map(),
 
             /**
@@ -387,6 +387,7 @@ C = Added patches
              * Processes the raw item data from `_rawItems` into the lookup maps for efficient access.
              * This function is called once during the script's initialization.
              * @function
+             * @returns {void}
              */
             initialize() {
                 const CoreC = this.constants;
@@ -437,6 +438,7 @@ C = Added patches
 
         /**
          * Disables the entire utility mod, cleaning up all UI, styles, and event listeners.
+         * @returns {void}
          */
         disableMod() {
             if (!this.state.enabled) return; // Already disabled
@@ -486,13 +488,17 @@ C = Added patches
 
         /**
          * Switches the UI to show the main menu.
+         * @returns {void}
          */
         goToMainMenu() {
             this.setUIState('showMenu');
         },
 
+
+
         /**
          * Switches the UI to show the in-game interface.
+         * @returns {void}
          */
         goToGamePlay() {
             this.setUIState('showGameplay');
@@ -500,8 +506,8 @@ C = Added patches
 
         /**
          * Extracts the server-side item ID from a DOM element's ID attribute.
-         * @param {HTMLElement} itemElem - The action bar item element.
-         * @returns {RegExpMatchArray|null} A match array where index 1 is the ID, or null if no match.
+         * @param {HTMLElement} itemElem - The action bar item element (e.g., '#actionBarItem16').
+         * @returns {RegExpMatchArray|null} A match array where index 1 contains the numeric ID string, or null if no match is found.
          */
         getItemIdFromElem(itemElem) {
             return itemElem.id.match(this.data.constants.DOM.ACTION_BAR_ITEM_REGEX);
@@ -510,7 +516,7 @@ C = Added patches
         /**
          * Retrieves the full data object for an item from its corresponding DOM element.
          * @param {HTMLElement} itemElem - The action bar item element.
-         * @returns {object|undefined} The item data object, or undefined if not found.
+         * @returns {object|undefined} The item's data object from the internal database, or undefined if not found.
          */
         getItemFromElem(itemElem) {
             const match = this.getItemIdFromElem(itemElem);
@@ -522,8 +528,8 @@ C = Added patches
 
         /**
          * Checks if the player has sufficient resources to afford an item.
-         * @param {object} itemData - The item's data object, containing a `cost` property.
-         * @returns {boolean} True if the item is affordable or has no cost, false otherwise.
+         * @param {object} itemData - The item's data object, which must contain a `cost` property.
+         * @returns {boolean} Returns `true` if the player can afford the item or if it's free, `false` otherwise.
          */
         isAffordableItem(itemData) {
             if (!itemData || !itemData.cost) return true; // Free items are always affordable
@@ -535,8 +541,8 @@ C = Added patches
 
         /**
          * Checks if an item element in the action bar is currently visible and represents a valid item.
-         * @param {HTMLElement} itemElem - The action bar item element.
-         * @returns {boolean} True if the item is available for selection.
+         * @param {HTMLElement} itemElem - The action bar item element to check.
+         * @returns {boolean} Returns `true` if the item is visible and has a valid ID, `false` otherwise.
          */
         isAvailableItem(itemElem) {
             const isVisible = itemElem.style.display !== this.data.constants.CSS.DISPLAY_NONE;
@@ -547,8 +553,8 @@ C = Added patches
 
         /**
          * Determines if an item can be equipped by checking its availability, affordability, and placement limits.
-         * @param {HTMLElement} itemElem - The action bar item element.
-         * @returns {boolean} True if the item can be equipped.
+         * @param {HTMLElement} itemElem - The action bar item element to check.
+         * @returns {boolean} Returns `true` if all conditions (availability, cost, limits) are met.
          */
         isEquippableItem(itemElem) {
             if (!this.isAvailableItem(itemElem)) return false;
@@ -571,9 +577,9 @@ C = Added patches
         },
 
         /**
-         * Checks if a user input element (like chat or menus) is currently focused.
+         * Checks if a user input element (like chat or menus) is currently focused and visible.
          * @private
-         * @returns {boolean} True if an input is focused, false otherwise.
+         * @returns {boolean} `true` if an input is focused, `false` otherwise.
          */
         isInputFocused() {
             const CoreC = this.data.constants;
@@ -588,9 +594,9 @@ C = Added patches
          * Observes a specific HTMLElement and resolves a promise once its computed
          * style property 'display' stops being 'none'.
          *
-         * @param {HTMLElement} element The HTML element to observe.
+         * @param {HTMLElement} element - The HTML element to observe.
          * @returns {Promise<HTMLElement>} A promise that resolves with the element itself
-         *   once its display is 'block'. Rejects if the input is not an HTMLElement.
+         *   once its display is no longer 'none'. Rejects if the input is not an HTMLElement.
          */
         waitForVisible(element) {
             if (!element) return Promise.reject();
@@ -620,8 +626,8 @@ C = Added patches
 
         /**
          * Waits for a list of elements to be present in the DOM.
-         * @param {Object<string, string>} elementMap - An object mapping desired variable names to element IDs.
-         * @returns {Promise<Object<string, HTMLElement>>}
+         * @param {Object<string, string>} elementMap - An object mapping desired variable names to element IDs (e.g., `{ mainMenu: 'mainMenu', gameUI: 'gameUI' }`).
+         * @returns {Promise<Object<string, HTMLElement>>} A promise that resolves with an object containing the found HTML elements, keyed by the names provided in `elementMap`.
          */
         waitForElementsToLoad(elementMap) {
             return new Promise(resolve => {
@@ -673,6 +679,7 @@ C = Added patches
          *
          * @param {string} propertyName - The name of the style property to lock (e.g., 'display').
          * @param {HTMLElement[]} elements - An array of HTMLElements to affect.
+         * @returns {void}
          */
         lockStyleUpdates(propertyName, elements) {
             if (!Array.isArray(elements)) {
@@ -721,6 +728,7 @@ C = Added patches
         *
         * @param {string} propertyName - The name of the style property to unlock.
         * @param {HTMLElement[]} elements - An array of HTMLElements to affect.
+        * @returns {void}
         */
         unlockStyleUpdates(propertyName, elements) {
             if (!Array.isArray(elements)) {
@@ -756,6 +764,7 @@ C = Added patches
         /**
          * Returns a Promise that resolves on the next animation frame.
          * A helper for ensuring DOM updates are painted.
+         * @returns {Promise<void>} A promise that resolves after the next browser repaint.
          */
         waitTillNextFrame() {
             return new Promise(resolve => requestAnimationFrame(resolve));
@@ -764,7 +773,7 @@ C = Added patches
         /**
          * Returns a Promise that resolves after a specified delay.
          * @param {number} ms - The delay in milliseconds.
-         * @returns {Promise<void>} A promise that resolves after the delay.
+         * @returns {Promise<void>} A promise that resolves after the specified delay.
          */
         wait(ms) {
             return new Promise(resolve => setTimeout(resolve, ms));
@@ -776,8 +785,9 @@ C = Added patches
          * Encodes and sends a packet to the game server via WebSocket.
          * It safely handles the encoding and ensures the socket is ready before attempting to send.
          *
-         * @param {string} type - The one-character identifier for the packet type (e.g; 'z' for equip, 'c' for wearable).
+         * @param {string} type - The one-character identifier for the packet type (e.g., 'z' for equip, 'c' for wearable).
          * @param {any[]} data - The payload/data for the packet, typically an array of arguments.
+         * @returns {void}
          */
         sendGamePacket(type, data) {
             if (!this.state.enabled) return; // Already disabled, no need to proceed.
@@ -794,7 +804,8 @@ C = Added patches
 
         /**
          * Intercepts and processes incoming WebSocket messages to track game state changes.
-         * @param {MessageEvent} event - The WebSocket message event containing the game data.
+         * @param {MessageEvent} event - The WebSocket message event containing the raw game data.
+         * @returns {void}
          */
         handleSocketMessage(event) {
             if (!this.state.enabled || !this.state.gameDecoder) return; // Already disabled or already set up, no need to proceed.
@@ -872,7 +883,8 @@ C = Added patches
         // --- INITIALIZATION & HOOKING ---
 
         /**
-         * Collects CSS from the core mod and all registered mini-mods and injects it into a single style tag.
+         * Collects CSS from the core mod and all registered mini-mods and injects it into a single style tag in the document's head.
+         * @returns {void}
          */
         injectCSS() {
             const CoreC = this.data.constants;
@@ -907,7 +919,7 @@ C = Added patches
 
         /**
          * Returns the CSS styles for the core mod, such as the title screen enhancement.
-         * @returns {string} The CSS string.
+         * @returns {string} The CSS string for core functionalities.
          */
         applyCoreCSS() {
             const CoreC = this.data.constants;
@@ -928,7 +940,9 @@ C = Added patches
         },
 
         /**
-         * Updates the main menu title screen and injects necessary UI elements.
+         * Updates the main menu title screen and injects necessary UI elements. This method
+         * will wait for the title element to appear in the DOM if it's not immediately available.
+         * @returns {void}
          */
         updateGameTitleScreen() {
             const CoreC = this.data.constants;
@@ -957,9 +971,10 @@ C = Added patches
         },
 
         /**
-         * Centralized method to manage the visibility of core game UI elements.
-         * Allowing easy switching between gameplay, main menu, and loading/error screen.
-         * @param {'showError' | 'showGameplay' | 'showMenu'} state The UI state to display.
+         * Centralized method to manage the visibility of core game UI elements,
+         * allowing easy switching between gameplay, main menu, and loading/error screens.
+         * @param {'showError' | 'showGameplay' | 'showMenu'} state - The UI state to display.
+         * @returns {void}
          */
         setUIState(state) {
             const CoreC = this.data.constants;
@@ -1049,8 +1064,8 @@ C = Added patches
         /**
          * Handles the scenario where the script fails to hook codecs. It displays
          * a message and prompts for a reload. If the user cancels, the mod will be disabled.
-         * @param {boolean} [afterGameEnter=false] - If true, the UI will revert to gameplay or main menu view on cancellation.
-         * @returns {Promise<void>}
+         * @param {boolean} [afterGameEnter=false] - If true, indicates the failure happened after the player entered the game.
+         * @returns {Promise<void>} A promise that resolves after the reload logic is complete.
          */
         async handleHookFailureAndReload(afterGameEnter = false) {
             if (!this.state.enabled) return; // Already disabled, no need to proceed.
@@ -1098,6 +1113,7 @@ C = Added patches
          * Checks if both codecs and the WebSocket are ready. If so, performs the final
          * setup by attaching all necessary event listeners. This function ensures that
          * we don't try to attach listeners prematurely.
+         * @returns {void}
          */
         attemptFinalSetup() {
             if (!this.state.enabled || !this.state.codecsReady || !this.state.socketReady) return; // Already disabled or already set up, no need to proceed.
@@ -1114,8 +1130,9 @@ C = Added patches
          * It temporarily redefines a property setter on Object.prototype. When the game's code
          * creates an object with a specific property (like 'initialBufferSize'), our setter
          * fires, allowing us to grab a reference to that object.
-         * @param {string} propName - The unique property name to watch for.
-         * @param {Function} onFound - The callback to execute when the object is found.
+         * @param {string} propName - The unique property name to watch for (e.g., 'initialBufferSize').
+         * @param {Function} onFound - The callback function to execute when the target object is found, passing the object as an argument.
+         * @returns {void}
          */
         hookIntoPrototype(propName, onFound) {
             if (!this.state.enabled) return; // Already disabled, no need to proceed.
@@ -1153,7 +1170,8 @@ C = Added patches
         },
 
         /**
-         * Sets up hooks into Object.prototype to capture the game's msgpack encoder and decoder.
+         * Sets up hooks into Object.prototype to capture the game's msgpack encoder and decoder instances.
+         * @returns {void}
          */
         initializeHooks() {
             // Set up prototype hooks for both encoder and decoder
@@ -1174,6 +1192,7 @@ C = Added patches
         /**
          * Attempts to intercept and modify the game's main script to inject code that exposes
          * the msgpack encoder and decoder to the global window object.
+         * @returns {void}
          */
         interceptGameScript() {
             if (!this.state.enabled) return; // Already disabled, no need to proceed.
@@ -1268,6 +1287,7 @@ C = Added patches
 
         /**
          * Sets up the WebSocket proxy to capture the game's connection instance.
+         * @returns {void}
          */
         setupWebSocketProxy() {
             const originalWebSocket = window.WebSocket;
@@ -1297,7 +1317,9 @@ C = Added patches
         },
 
         /**
-         * Runs once the WebSocket is established and the player has spawned.
+         * Runs once the WebSocket is established and the player has spawned. This function
+         * serves as a notification point for all minimods that the game is fully ready.
+         * @returns {void}
          */
         onGameReady() {
             if (!this.state.enabled) return; // Already disabled, no need to proceed.
@@ -1316,7 +1338,9 @@ C = Added patches
         },
 
         /**
-         * The main entry point for the script. Initializes data and sets up hooks.
+         * The main entry point for the script. Initializes data, sets up hooks,
+         * injects CSS, and initializes all registered minimods.
+         * @returns {void}
          */
         init() {
             // Exposes the logger to the global window object for debugging purposes.
@@ -1374,12 +1398,14 @@ C = Added patches
 
         // --- MINI-MOD MANAGEMENT ---
 
-        /** @property {Array<object>} miniMods - A list of all registered sub-modules. */
+        /** @property {Array<object>} miniMods - A list of all registered sub-modules (minimods). */
         miniMods: [],
 
         /**
-         * Adds a mini-mod to the system to be initialized.
-         * @param {object} mod - The mini-mod object to register.
+         * Adds a mini-mod to the system. The core module will then manage its lifecycle
+         * (init, cleanup, packet handling, etc.).
+         * @param {object} mod - The mini-mod object to register. It should conform to the minimod API structure.
+         * @returns {void}
          */
         registerMod(mod) {
             this.miniMods.push(mod);
@@ -1418,22 +1444,23 @@ C = Added patches
 
         /** @property {object} state - Dynamic state for this minimod. */
         state: {
-            /** @property {number} selectedItemIndex - The current index within the list of *equippable* items. */
+            /** @property {number} selectedItemIndex - The current index within the filtered list of *equippable* items. */
             selectedItemIndex: -1,
-            /** @property {number} lastSelectedWeaponIndex - The index of the last selected weapon, used to auto-switch back after using an item. */
+            /** @property {number} lastSelectedWeaponIndex - The index of the last selected weapon, used to auto-switch back after using a non-weapon item. */
             lastSelectedWeaponIndex: -1,
-            /** JSDoc comment-less */
+            /** @property {object} boundHandlers - Stores bound event handler functions for easy addition and removal of listeners. */
             boundHandlers: {},
         },
 
         // --- MINI-MOD LIFECYCLE & HOOKS ---
 
         /**
-         * Handles incoming game packets and updates the state of the Scroll Inventory Mini-mod.
-         * This function acts as a central dispatcher for various packet types relevant to inventory management.
+         * Handles incoming game packets to update the minimod's state, such as player resources,
+         * item counts, and player ID. This acts as a dispatcher for various packet types.
          *
-         * @param {string} packetName - The human-readable name of the incoming packet.
+         * @param {string} packetName - The human-readable name of the incoming packet (e.g., 'Update Player Value').
          * @param {object} packetData - The parsed data object from the incoming packet.
+         * @returns {void}
          */
         onPacket(packetName, packetData) {
             switch (packetName) {
@@ -1485,7 +1512,9 @@ C = Added patches
         },
 
         /**
-         * Adds necessary event listeners to the document and action bar for inventory interaction.
+         * Adds necessary event listeners to the document (for wheel and keydown) and the
+         * action bar (for clicks) to handle all forms of inventory interaction.
+         * @returns {void}
          */
         addEventListeners() {
             const CoreC = this.core.data.constants;
@@ -1499,6 +1528,10 @@ C = Added patches
             document.getElementById(CoreC.DOM.ACTION_BAR).addEventListener('click', this.state.boundHandlers.handleItemClick);
         },
 
+        /**
+         * Cleans up by removing all event listeners that were added by this minimod.
+         * @returns {void}
+         */
         cleanup() {
             const CoreC = this.core.data.constants;
             document.removeEventListener('wheel', this.state.boundHandlers.handleInventoryScroll);
@@ -1510,7 +1543,9 @@ C = Added patches
         },
 
         /**
-         * Called when the game is ready. Selects the initial weapon and sets up UI observers.
+         * Called when the game is ready (player has spawned). It scrapes the initial
+         * resource state from the DOM and selects the first available weapon.
+         * @returns {void}
          */
         onGameReady() {
             const CoreC = this.core.data.constants;
@@ -1535,8 +1570,10 @@ C = Added patches
         // --- EVENT HANDLERS ---
 
         /**
-         * The main handler for the 'wheel' event. Orchestrates item selection on scroll.
+         * The main handler for the 'wheel' event. It prevents default scroll behavior and
+         * triggers an inventory selection update based on the scroll direction.
          * @param {WheelEvent} event - The DOM wheel event.
+         * @returns {void}
          */
         handleInventoryScroll(event) {
             const CoreC = this.core.data.constants;
@@ -1550,8 +1587,9 @@ C = Added patches
         },
 
         /**
-         * Handles keyboard shortcuts for direct item selection (e.g; '1'-'9', 'Q').
+         * Handles keyboard shortcuts for direct item selection (e.g., '1'-'9' for action bar slots, 'Q' for food).
          * @param {KeyboardEvent} event - The DOM keyboard event.
+         * @returns {void}
          */
         handleKeyPress(event) {
             const CoreC = this.core.data.constants;
@@ -1585,8 +1623,9 @@ C = Added patches
         },
 
         /**
-         * Handles direct item selection by clicking on the action bar.
+         * Handles direct item selection by clicking on an item in the action bar.
          * @param {MouseEvent} event - The DOM mouse event.
+         * @returns {void}
          */
         handleItemClick(event) {
             if (this.core.isInputFocused()) return;
@@ -1604,8 +1643,10 @@ C = Added patches
         // --- CORE LOGIC & UI MANIPULATION ---
 
         /**
-         * The master function for refreshing the inventory selection state and UI.
-         * @param {number} [scrollDirection=0] - The direction of scroll. 1 for down, -1 for up. 0 refreshes UI without changing selection.
+         * The master function for refreshing the inventory selection state and UI. It recalculates the list
+         * of equippable items, determines the new selection index, sends an equip packet if needed, and updates the UI.
+         * @param {number} [scrollDirection=0] - The direction of scroll: 1 for down, -1 for up, 0 to refresh UI without changing selection.
+         * @returns {void}
          */
         refreshEquippableState(scrollDirection = this.core.data.constants.GAME_STATE.NO_SCROLL) {
             const CoreC = this.core.data.constants;
@@ -1648,8 +1689,10 @@ C = Added patches
         },
 
         /**
-         * Updates state when an item is selected by its index in the list of equippable items.
+         * Updates state when an item is selected by its index in the list of currently equippable items,
+         * then triggers a UI refresh without sending a new packet.
          * @param {number} newIndex - The index of the item to select in the list of currently equippable items.
+         * @returns {void}
          */
         selectItemByIndex(newIndex) {
             const CoreC = this.core.data.constants;
@@ -1666,8 +1709,10 @@ C = Added patches
         // --- UI & HELPER FUNCTIONS ---
 
         /**
-         * Updates the action bar UI to highlight the selected item and apply styles to others.
-         * @param {HTMLElement|null} selectedItem - The element to highlight as selected.
+         * Updates the action bar UI to highlight the selected item and apply grayscale/brightness filters
+         * to all other items based on their equippable status.
+         * @param {HTMLElement|null} selectedItem - The element to highlight as selected, or null to clear selection.
+         * @returns {void}
          */
         updateSelectionUI(selectedItem) {
             const CoreC = this.core.data.constants;
@@ -1752,17 +1797,17 @@ C = Added patches
             pinnedWearables: new Set(),
             /** @property {HTMLElement|null} draggedItem - The wearable button element currently being dragged. */
             draggedItem: null,
-            /** JSDoc comment-less */
+            /** @property {object} boundHandlers - Stores bound event handler functions for easy addition and removal of listeners. */
             boundHandlers: {},
-            /** JSDoc comment-less */
+            /** @property {Array<MutationObserver|ResizeObserver>} observers - Stores observers for dynamic UI adjustments and cleanup. */
             observers: [],
         },
 
         // --- MINI-MOD LIFECYCLE & HOOKS ---
 
         /**
-         * Returns the CSS rules required for styling the wearables toolbar and its buttons.
-         * @returns {string} The CSS string.
+         * Returns the CSS rules required for styling the wearables toolbar, its buttons, and adjusting the store menu layout.
+         * @returns {string} The complete CSS string for this minimod.
          */
         applyCSS() {
             const CoreC = this.core.data.constants;
@@ -1866,9 +1911,10 @@ C = Added patches
         },
 
         /**
-         * Handles incoming game packets related to the Store / Shop and updates the Wearables Toolbar UI.
+         * Handles the 'Update Store Items' packet to add new wearables to the toolbar or update the currently equipped item's visual state.
          * @param {string} packetName - The human-readable name of the incoming packet.
          * @param {object} packetData - The parsed data object from the incoming packet.
+         * @returns {void}
          */
         onPacket(packetName, packetData) {
             const CoreC = this.core.data.constants;
@@ -1883,7 +1929,8 @@ C = Added patches
         },
 
         /**
-         * Called when the game is ready. Injects the CSS and creates the UI for the wearables toolbar.
+         * Called when the game is ready. Creates the wearables toolbar UI and sets up observers for dynamic positioning and store menu interactions.
+         * @returns {void}
          */
         onGameReady() {
             const CoreC = this.core.data.constants;
@@ -1899,7 +1946,10 @@ C = Added patches
             }
         },
 
-        /** JSDoc comment-less */
+        /**
+         * Cleans up all UI elements, observers, and event listeners created by this minimod.
+         * @returns {void}
+         */
         cleanup() {
             const CoreC = this.core.data.constants;
             const LocalC = this.constants;
@@ -1914,7 +1964,8 @@ C = Added patches
         // --- INITIAL UI SETUP ---
 
         /**
-         * Creates the HTML structure for the wearables toolbar and appends it to the document body.
+         * Creates the main HTML structure for the wearables toolbar, including grids for hats and accessories, and appends it to the game UI.
+         * @returns {void}
          */
         createWearablesToolbarUI() {
             const LocalC = this.constants;
@@ -1949,8 +2000,9 @@ C = Added patches
         },
         
         /**
-         * Sets up an observer to dynamically shift the toolbar's position
-         * based on the visibility and height of the item info box.
+         * Sets up ResizeObservers to dynamically shift the toolbar's position and the item info box
+         * to prevent them from overlapping.
+         * @returns {void}
          */
         setupDynamicPositioning() {
             const LocalC = this.constants;
@@ -1987,7 +2039,11 @@ C = Added patches
             updatePosition();
         },
         
-        /** Sets up observers to dynamically resize the store menu and add pin buttons when it opens. */
+        /**
+         * Sets up MutationObservers to dynamically adjust the store menu layout when the upgrade UI appears,
+         * and to inject "Pin" buttons whenever the store menu's content changes.
+         * @returns {void}
+         */
         setupStoreMenuObservers() {
             const CoreC = this.core.data.constants;
             const LocalC = this.constants;
@@ -2029,9 +2085,10 @@ C = Added patches
         // --- UI MANIPULATION & STATE UPDATES ---
 
         /**
-         * Adds a new button for a wearable item to the appropriate grid (hats or accessories) in the toolbar.
+         * Adds a new button for a specific wearable item to the appropriate grid (hats or accessories) in the toolbar.
          * @param {number} id - The server-side ID of the wearable item.
-         * @param {string} type - The type of wearable (HAT or ACCESSORY).
+         * @param {string} type - The type of wearable ('hat' or 'accessory').
+         * @returns {void}
          */
         addWearableButton(id, type) {
             const LocalC = this.constants;
@@ -2076,9 +2133,10 @@ C = Added patches
         },
 
         /**
-         * Updates the visual state of wearable buttons to reflect which item is currently equipped.
-         * @param {number} id - The server-side ID of the newly equipped wearable. 0 means unequip.
-         * @param {string} type - The type of wearable (HAT or ACCESSORY).
+         * Updates the visual state of wearable buttons to highlight which item is currently equipped.
+         * @param {number} id - The server-side ID of the newly equipped wearable. A value of 0 means unequip.
+         * @param {string} type - The type of wearable ('hat' or 'accessory').
+         * @returns {void}
          */
         updateEquippedWearable(id, type) {
             const LocalC = this.constants;
@@ -2098,7 +2156,10 @@ C = Added patches
             }
         },
 
-        /** Hides/shows wearable buttons based on whether they are pinned. */
+        /**
+         * Hides or shows wearable buttons on the toolbar based on whether they are in the `pinnedWearables` set.
+         * @returns {void}
+         */
         refreshToolbarVisibility() {
             const LocalC = this.constants;
             const CoreC = this.core.data.constants;
@@ -2115,7 +2176,8 @@ C = Added patches
         // --- PINNING LOGIC ---
 
         /**
-         * Adds "Pin" / "Unpin" buttons to owned wearable items in the store.
+         * Scans the store menu and adds "Pin" or "Unpin" buttons to all owned wearable items that do not already have one.
+         * @returns {void}
          */
         addPinButtons() {
             const CoreC = this.core.data.constants;
@@ -2158,8 +2220,8 @@ C = Added patches
 
         /**
          * Checks if a wearable is currently pinned to the toolbar.
-         * @param {number} id The ID of the wearable to check.
-         * @returns {boolean} True if the wearable is pinned.
+         * @param {number} id - The ID of the wearable to check.
+         * @returns {boolean} Returns `true` if the wearable is pinned, `false` otherwise.
          */
         isWearablePinned(id) {
             return this.state.pinnedWearables.has(id);
@@ -2167,9 +2229,9 @@ C = Added patches
 
         /**
          * Toggles the pinned state of a wearable item.
-         * @param {number} id - The ID of the wearable to pin/unpin.
-         * @param {string} type - The type of the wearable (HAT/ACCESSORY).
-         * @returns {boolean} - True if the item is now pinned, false otherwise.
+         * @param {number} id - The ID of the wearable to pin or unpin.
+         * @param {string} type - The type of the wearable ('hat' or 'accessory').
+         * @returns {boolean} Returns `true` if the item is now pinned, `false` if it is now unpinned.
          */
         togglePin(id, type) {
             const pinned = this.state.pinnedWearables;
@@ -2186,8 +2248,9 @@ C = Added patches
         // --- EVENT HANDLERS (DRAG & DROP) ---
 
         /**
-         * Handles the dragover event for the wearables grid to allow for live reordering.
-         * @param {DragEvent} e - The drag event.
+         * Handles the dragover event for the wearables grid to allow for live reordering of pinned items.
+         * @param {DragEvent} e - The DOM drag event.
+         * @returns {void}
          */
         handleDragOver(e) {
             e.preventDefault();
@@ -2207,11 +2270,11 @@ C = Added patches
         // --- HELPER FUNCTIONS ---
 
         /**
-         * Finds the sibling element that should come after the dragged item in a grid layout.
-         * @param {HTMLElement} container - The grid container.
-         * @param {number} x - The cursor's horizontal position.
-         * @param {number} y - The cursor's vertical position.
-         * @returns {HTMLElement|null} The sibling to insert before, or null to append at the end.
+         * Finds the sibling element that should come after the dragged item in a grid layout based on cursor position.
+         * @param {HTMLElement} container - The grid container element.
+         * @param {number} x - The cursor's horizontal position (e.g., `event.clientX`).
+         * @param {number} y - The cursor's vertical position (e.g., `event.clientY`).
+         * @returns {HTMLElement|null} The sibling element to insert before, or null to append the dragged item at the end of the container.
          */
         _getDragAfterElement(container, x, y) {
             const LocalC = this.constants;
@@ -2235,7 +2298,7 @@ C = Added patches
 
     /**
      * @module TypingIndicatorMiniMod
-     * @description Shows a "..." typing indicator in chat while the user is typing.
+     * @description Shows a "..." typing indicator in chat while the user is typing, respecting the game's chat rate limit.
      */
     const TypingIndicatorMiniMod = {
         
@@ -2251,30 +2314,44 @@ C = Added patches
          * @property {object} config - Holds user-configurable settings for the script.
          */
         config: {
+            /** @property {number} INDICATOR_INTERVAL - The time in milliseconds between each animation frame of the indicator. */
             INDICATOR_INTERVAL: 1000, // ms between each animation frame
+            /** @property {number} RATE_LIMIT_MS - The cooldown period in milliseconds between sending chat messages to avoid server spam kicks. */
             RATE_LIMIT_MS: 550,
+            /** @property {number} START_DELAY - A safe buffer in milliseconds before showing the indicator to avoid flashing on quick messages. */
             START_DELAY: 1000,       // A safe buffer for the ~500ms chat cooldown
+            /** @property {string[]} ANIMATION_FRAMES - The sequence of strings used for the typing animation. */
             ANIMATION_FRAMES: ['.', '..', '...'],
+            /** @property {number} QUEUE_PROCESSOR_INTERVAL - How often, in milliseconds, to check the message queue for pending messages to send. */
             QUEUE_PROCESSOR_INTERVAL: 100, // How often to check the message queue
         },
 
         /** @property {object} state - Dynamic state for this minimod. */
         state: {
+            /** @property {HTMLElement|null} chatBoxElement - A reference to the game's chat input element. */
             chatBoxElement: null,
+            /** @property {number|null} indicatorIntervalId - The ID of the interval used for the typing animation. */
             indicatorIntervalId: null,
+            /** @property {number|null} startIndicatorTimeoutId - The ID of the timeout used to delay the start of the indicator. */
             startIndicatorTimeoutId: null,
+            /** @property {number|null} queueProcessorIntervalId - The ID of the interval that processes the message queue. */
             queueProcessorIntervalId: null,
+            /** @property {number} animationFrameIndex - The current index in the `ANIMATION_FRAMES` array. */
             animationFrameIndex: 0,
+            /** @property {number} lastMessageSentTime - The timestamp of the last message sent to the server. */
             lastMessageSentTime: 0,
+            /** @property {Array<{type: 'user'|'system', content: string}>} messageQueue - The queue of messages waiting to be sent. */
             messageQueue: [],
+            /** @property {object} boundHandlers - Stores bound event handler functions for easy addition and removal of listeners. */
             boundHandlers: {},
         },
 
         // --- MINI-MOD LIFECYCLE & HOOKS ---
 
         /**
-         * Finds the chat box element and attaches all necessary event listeners for the mod to function.
-         * This is the entry point for the minimod's setup.
+         * Finds the chat box element, attaches all necessary event listeners (focus, blur, keydown),
+         * and starts the message queue processor.
+         * @returns {void}
          */
         addEventListeners() {
             this.state.chatBoxElement = document.getElementById('chatBox');
@@ -2293,6 +2370,10 @@ C = Added patches
             Logger.log("Typing indicator event listeners attached and queue processor started.");
         },
 
+        /**
+         * Cleans up all timers and event listeners created by the minimod.
+         * @returns {void}
+         */
         cleanup() {
             clearInterval(this.state.indicatorIntervalId);
             clearInterval(this.state.queueProcessorIntervalId);
@@ -2306,7 +2387,10 @@ C = Added patches
 
         // --- EVENT HANDLERS ---
 
-        /** Handles when the user clicks into the chat box. */
+        /**
+         * Handles the `focus` event on the chat box. Schedules the typing indicator to start after a short delay.
+         * @returns {void}
+         */
         handleFocus() {
             // Instead of starting immediately, set a timeout to begin the animation.
             // This prevents the indicator from flashing for accidental clicks or very fast messages.
@@ -2316,13 +2400,21 @@ C = Added patches
             }, this.config.START_DELAY);
         },
 
-        /** Handles when the user clicks out of the chat box. */
+        /**
+         * Handles the `blur` event on the chat box. Immediately stops the typing indicator.
+         * @returns {void}
+         */
         handleBlur() {
             clearTimeout(this.state.startIndicatorTimeoutId);
             this.stopTypingIndicator();
         },
 
-        /** Intercepts the 'Enter' key press to queue the user's message instead of sending it immediately. */
+        /**
+         * Intercepts the 'Enter' key press to queue the user's message instead of sending it immediately,
+         * preventing the default game behavior.
+         * @param {KeyboardEvent} event - The DOM keyboard event.
+         * @returns {void}
+         */
         handleKeyDown(event) {
             if (event.key === 'Enter') {
                 // Prevent the game from sending the message. We will handle it.
@@ -2342,7 +2434,10 @@ C = Added patches
         
         // --- CORE LOGIC ---
 
-        /** Starts the "..." animation loop. */
+        /**
+         * Starts the "..." animation loop by setting up an interval to call `animateIndicator`.
+         * @returns {void}
+         */
         startTypingIndicator() {
             if (this.state.indicatorIntervalId) return; // Already running
 
@@ -2354,7 +2449,10 @@ C = Added patches
             this.state.indicatorIntervalId = setInterval(this.animateIndicator.bind(this), this.config.INDICATOR_INTERVAL);
         },
 
-        /** Stops the "..." animation loop and clears the indicator from chat. */
+        /**
+         * Stops the "..." animation loop, clears the interval, and queues a final empty message to clear the indicator from chat.
+         * @returns {void}
+         */
         stopTypingIndicator() {
             if (!this.state.indicatorIntervalId) return; // Already stopped
 
@@ -2369,7 +2467,10 @@ C = Added patches
             this.queueSystemMessage('');
         },
         
-        /** Sends the next frame of the animation. */
+        /**
+         * Queues the next frame of the typing animation (e.g., '.', '..', '...') to be sent to the server.
+         * @returns {void}
+         */
         animateIndicator() {
             const frame = this.config.ANIMATION_FRAMES[this.state.animationFrameIndex];
             this.queueSystemMessage(frame);
@@ -2381,7 +2482,7 @@ C = Added patches
         // --- RATE LIMIT & QUEUE MANAGEMENT ---
 
         /**
-         * Starts the interval that processes the message queue.
+         * Starts the interval that periodically processes the message queue.
          * @returns {void}
          */
         startQueueProcessor() {
@@ -2390,8 +2491,9 @@ C = Added patches
         },
 
         /**
-         * Adds a user message to the front of the queue.
-         * @param {string} message The user's chat message to send.
+         * Adds a user-typed message to the front of the queue to prioritize it.
+         * @param {string} message - The user's chat message to send.
+         * @returns {void}
          */
         queueUserMessage(message) {
             Logger.log(`Queueing user message: "${message}"`);
@@ -2399,8 +2501,10 @@ C = Added patches
         },
         
         /**
-         * Adds a system message (like the indicator) to the back of the queue.
-         * @param {string} message The system message content (e.g; "Hey Bob!" or ".."). 
+         * Adds a system message (like the indicator) to the back of the queue. Optimizes by replacing the
+         * last system message if it's also an indicator frame.
+         * @param {string} message - The system message content (e.g., '..').
+         * @returns {void}
          */
         queueSystemMessage(message) {
             // Optimization: Don't queue up a ton of indicator dots. 
@@ -2416,6 +2520,7 @@ C = Added patches
         /**
          * Checks the queue and sends the next message if the chat rate limit has passed.
          * This is the core of the rate-limiting solution.
+         * @returns {void}
          */
         processMessageQueue() {
             const CoreC = this.core.data.constants;
@@ -2452,27 +2557,41 @@ C = Added patches
          * @property {object} config - Holds user-configurable settings for the script.
          */
         config: {
+            /** @property {string} HEAL_KEY - The key to hold down to activate continuous healing. */
             HEAL_KEY: 'Q',      // The key to hold for healing
+            /** @property {number} HEAL_INTERVAL - How often, in milliseconds, to attempt to send a heal packet while the key is held. */
             HEAL_INTERVAL: 100, // How often to attempt to heal, in milliseconds
         },
 
         /** @property {object} state - Dynamic state for this minimod. */
         state: {
+            /** @property {boolean} isHealKeyHeld - Tracks if the healing key is currently being pressed. */
             isHealKeyHeld: false,
+            /** @property {number|null} healIntervalId - The ID of the interval used for continuous healing attempts. */
             healIntervalId: null,
+            /** @property {number} lastHealTime - The timestamp of the last healing attempt. */
             lastHealTime: 0,
+            /** @property {object} boundHandlers - Stores bound event handler functions for easy addition and removal of listeners. */
             boundHandlers: {}
         },
 
         // --- MINI-MOD LIFECYCLE & HOOKS ---
 
-        /** Sets up key event listeners for starting/stopping healing. */
+        /**
+         * Sets up keydown and keyup event listeners to start and stop the healing process.
+         * @returns {void}
+         */
         addEventListeners() {
             this.state.boundHandlers.handleKeyDown = this.handleKeyDown.bind(this);
             this.state.boundHandlers.handleKeyUp = this.handleKeyUp.bind(this);
             document.addEventListener('keydown', this.state.boundHandlers.handleKeyDown);
             document.addEventListener('keyup', this.state.boundHandlers.handleKeyUp);
         },
+        
+        /**
+         * Cleans up by stopping any active healing interval and removing all event listeners.
+         * @returns {void}
+         */
         cleanup() {
             this.stopHealing();
             document.removeEventListener('keydown', this.state.boundHandlers.handleKeyDown);
@@ -2481,7 +2600,11 @@ C = Added patches
 
         // --- EVENT HANDLERS ---
 
-        /** Handles keydown events to start healing when the heal key is pressed. */
+        /**
+         * Handles the `keydown` event to start the healing loop when the configured heal key is pressed.
+         * @param {KeyboardEvent} event - The DOM keyboard event.
+         * @returns {void}
+         */
         handleKeyDown(event) {
             if (this.core.isInputFocused() || event.key.toUpperCase() !== this.config.HEAL_KEY) return;
             
@@ -2491,7 +2614,11 @@ C = Added patches
             }
         },
 
-        /** Handles keyup events to stop healing when the heal key is released. */
+        /**
+         * Handles the `keyup` event to stop the healing loop when the heal key is released.
+         * @param {KeyboardEvent} event - The DOM keyboard event.
+         * @returns {void}
+         */
         handleKeyUp(event) {
             if (event.key.toUpperCase() === this.config.HEAL_KEY) {
                 this.state.isHealKeyHeld = false;
@@ -2501,7 +2628,10 @@ C = Added patches
 
         // --- CORE LOGIC ---
 
-        /** Starts the healing interval if not already running. */
+        /**
+         * Starts the healing interval, which repeatedly calls `attemptHeal`.
+         * @returns {void}
+         */
         startHealing() {
             if (this.state.healIntervalId) return; // Already healing
 
@@ -2512,7 +2642,10 @@ C = Added patches
             this.state.healIntervalId = setInterval(this.attemptHeal.bind(this), this.config.HEAL_INTERVAL);
         },
 
-        /** Stops the healing interval. */
+        /**
+         * Stops the healing interval and clears the interval ID.
+         * @returns {void}
+         */
         stopHealing() {
             if (this.state.healIntervalId) {
                 Logger.log("Stopping Assisted Heal.", "color: #ff1744;");
@@ -2521,7 +2654,10 @@ C = Added patches
             }
         },
 
-        /** Attempts to use a food item from the action bar to heal the player. */
+        /**
+         * Finds the first available and equippable food item on the action bar and sends the necessary packets to use it.
+         * @returns {void}
+         */
         attemptHeal() {
             const CoreC = this.core.data.constants;
 
