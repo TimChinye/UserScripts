@@ -1,10 +1,10 @@
 // ==UserScript==
-// @name         AI Studio Mod - Dynamic Table of Contents + Revert Scrollbar
+// @name         AI Studio Mod - Table of Contents + Revert Scrollbar
 // @namespace    https://greasyfork.org/users/137913
 // @description  Adds a dynamic TOC with smart scrolling for long sections to the settings panel.
 // @author       TigerYT
 // @version      2.3.2
-// @match        *://aistudio.google.com/prompts/*
+// @match        *://aistudio.google.com/*
 // @icon         https://www.gstatic.com/aistudio/ai_studio_favicon_2_32x32.png
 // @grant        none
 // ==/UserScript==
@@ -12,7 +12,6 @@
 (function() {
     'use strict';
 
-    // --- 1. APPLY CUSTOM STYLES ---
     function applyCustomStyles() {
         const head = document.head || document.getElementsByTagName('head')[0];
         if (!head) {
@@ -98,60 +97,54 @@
         }
     }
 
-    // --- 2. THE CORE LOGIC TO BUILD/UPDATE THE TABLE OF CONTENTS ---
     function updateTableOfContents(settingsContainer, chatBox) {
 
-        // A. Clear any previously generated TOC elements to prevent duplication.
-        const oldElements = settingsContainer.querySelectorAll('.toc-item');
+        // Clear any previously generated TOC elements to prevent duplication.
+        const oldElements = settingsContainer.querySelectorAll('.injected');
         oldElements.forEach(el => el.remove());
 
-        // B. Create the static container elements for the TOC.
+        // Create the static container elements for the TOC.
         const dividerElement = document.createElement('mat-divider');
-        dividerElement.className = 'mat-divider';
+        dividerElement.className = 'injected mat-divider';
         dividerElement.style.margin = "8px 0";
 
         const headingElement = document.createElement('h3');
-        headingElement.className = 'toc-group-title';
+        headingElement.className = 'injected toc-group-title';
         headingElement.textContent = 'Table of Contents';
 
         const tocItemsContainer = document.createElement('div');
+        tocItemsContainer.className = 'injected';
 
-        // C. Find all chat turns and create a link for each one.
-        const chatTurns = Array.from(chatBox.firstElementChild.children)
-                               .filter((elem) => elem.tagName === 'MS-CHAT-TURN');
+        // Find all chat turns and create a link for each one.
+        const chatTurns = Array.from(chatBox.querySelectorAll('[class$="-prompt-container"]'));
 
         if (chatTurns.length > 0) {
-            chatTurns.forEach((elem, index) => {
+            chatTurns.forEach((responseElem, index) => {
                 let responseName = 'Unknown Turn';
 
-                const responseElem = elem?.firstElementChild?.children?.[1];
-                if (responseElem) {
-                    switch (responseElem.dataset.turnRole) {
-                        case "User":
-                            responseName = 'User Input';
-                            break;
-                        case "Model":
-                            responseName = responseElem.querySelector('.author-label') ? 'Model Thinking' : 'Model Output';
-                            break;
-                    }
+                switch (responseElem.dataset.turnRole) {
+                    case "User":
+                        responseName = 'User Input';
+                        break;
+                    case "Model":
+                        responseName = responseElem.parentElement.querySelector('button[class*="edit"]') ? 'Model Output' : 'Model Thinking';
+                        break;
                 }
 
-                // --- STRUCTURE CREATION ---
-
-                // 1. Create the main container DIV for the row
+                // Create the main container DIV for the row
                 const tocItemContainer = document.createElement('div');
                 tocItemContainer.className = 'toc-item';
 
-                // 2. Create the P element for the label
+                // Create the P element for the label
                 const labelElement = document.createElement('p');
                 labelElement.className = 'v3-font-body';
                 labelElement.textContent = (index + 1) + '. ' + responseName;
 
-                // 3. Create a span to hold all action links
+                // Create a span to hold all action links
                 const actionsSpan = document.createElement('span');
 
-                // 4. Check if the element is taller than the viewport
-                const isTallerThanViewport = elem.offsetHeight > window.innerHeight;
+                // Check if the element is taller than the viewport
+                const isTallerThanViewport = responseElem.offsetHeight > window.innerHeight;
 
                 if (isTallerThanViewport) {
                     // If it's too tall, add the special 'scroll to bottom' link
@@ -160,28 +153,28 @@
                     jumpLinkDown.textContent = '↓';
                     jumpLinkDown.title = 'Scroll to the bottom of this turn';
                     jumpLinkDown.addEventListener('click', () => {
-                        elem.scrollIntoView({ block: 'end', inline: 'nearest', behavior: 'smooth' });
+                        responseElem.scrollIntoView({ block: 'end', inline: 'nearest', behavior: 'smooth' });
                     });
                     actionsSpan.append(jumpLinkDown);
                 }
 
-                // 5. Always add the standard 'Go To' (scroll to top) link
+                // Always add the standard 'Go To' (scroll to top) link
                 const jumpLinkGoTo = document.createElement('a');
                 jumpLinkGoTo.className = 'toc-jump-link';
                 jumpLinkGoTo.textContent = 'Go To';
                 jumpLinkGoTo.title = 'Scroll to the top of this turn';
                 jumpLinkGoTo.addEventListener('click', () => {
-                    elem.scrollIntoView({ block: 'start', inline: 'nearest', behavior: 'smooth' });
+                    responseElem.scrollIntoView({ block: 'start', inline: 'nearest', behavior: 'smooth' });
                 });
                 actionsSpan.append(jumpLinkGoTo);
 
-                // 6. Assemble and append the final element
+                // Assemble and append the final element
                 tocItemContainer.append(labelElement, actionsSpan);
                 tocItemsContainer.append(tocItemContainer);
             });
         }
 
-        // D. Insert the newly created TOC elements into the settings panel.
+        // Insert the newly created TOC elements into the settings panel.
         if (chatTurns.length > 0) {
             settingsContainer.insertAdjacentElement('beforeend', dividerElement);
             settingsContainer.insertAdjacentElement('beforeend', headingElement);
@@ -190,7 +183,6 @@
     }
 
 
-    // --- 3. OBSERVER SETUP ---
     function initializeAndMonitor() {
         const observer = new MutationObserver((mutations, obs) => {
             const settingsContainer = document.querySelector('ms-prompt-run-settings');
@@ -218,7 +210,6 @@
         });
     }
 
-    // --- 4. SCRIPT ENTRY POINT ---
     applyCustomStyles();
     initializeAndMonitor();
 
