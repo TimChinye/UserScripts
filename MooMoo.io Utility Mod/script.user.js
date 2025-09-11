@@ -4,7 +4,7 @@
 // @description  This mod adds a number of mini-mods to enhance your MooMoo.io experience whilst not being too unfair to non-script users.
 // @license      GNU GPLv3 with the condition: no auto-heal or instant kill features may be added to the licensed material.
 // @author       TigerYT
-// @version      0.9.1
+// @version      0.10.3
 // @grant        none
 // @match        *://moomoo.io/*
 // @match        *://dev.moomoo.io/*
@@ -69,7 +69,7 @@ C = Added patches
          */
         config: {
             /** @property {boolean} DEBUG_MODE - Set to true to see detailed logs in the console. */
-            DEBUG_MODE: true,
+            DEBUG_MODE: true
         },
 
         /**
@@ -172,6 +172,7 @@ C = Added patches
                     STORE_HOLDER: 'storeHolder',
                     RESOURCE_DISPLAY: 'resDisplay',
                     CHAT_HOLDER: 'chatHolder',
+                    CHAT_BOX: 'chatBox',
                     ALLIANCE_MENU: 'allianceMenu',
                     ACTION_BAR: 'actionBar',
                     GAME_CANVAS: 'gameCanvas',
@@ -180,10 +181,18 @@ C = Added patches
                     ENTER_GAME_BUTTON: 'enterGame',
                     UPGRADE_HOLDER: 'upgradeHolder',
                     UPGRADE_COUNTER: 'upgradeCounter',
+                    ITEM_INFO_HOLDER: 'itemInfoHolder',
                     GAME_TITLE: 'gameName',
                     LOADING_TEXT: 'loadingText',
                     LOADING_INFO: 'loadingInfo',
+                    AD_HOLDER: 'promoImgHolder',
+                    WIDE_AD_CARD: 'wideAdCard',
+                    AD_CARD: 'adCard',
+                    LEFT_CARD_HOLDER: 'leftCardHolder',
+                    RIGHT_CARD_HOLDER: 'rightCardHolder',
                     MENU_CARD_HOLDER: 'menuCardHolder',
+                    MENU_CARD: 'menuCard',
+                    SHUTDOWN_DISPLAY: 'shutdownDisplay',
 
                     // Selectors / Patterns / Classes
                     ACTION_BAR_ITEM_REGEX: /^actionBarItem(\d+)$/,
@@ -318,9 +327,7 @@ C = Added patches
                 'B': ([reason]) => ({ reason }),
                 'C': ([yourSID]) => ({ yourSID }),
                 'D': ([playerData, isYou]) => ({
-                    id: playerData[0], sid: playerData[1], name: playerData[2], x: playerData[3], y: playerData[4],
-                    dir: playerData[5], health: playerData[6], maxHealth: playerData[7], scale: playerData[8],
-                    skinColor: playerData[9], isYou
+                    id: playerData[0], sid: playerData[1], name: playerData[2], x: playerData[3], y: playerData[4], dir: playerData[5], health: playerData[6], maxHealth: playerData[7], scale: playerData[8], skinColor: playerData[9], isYou
                 }),
                 'E': ([id]) => ({ id }),
                 'G': (data) => {
@@ -506,8 +513,8 @@ C = Added patches
 
         /**
          * Extracts the server-side item ID from a DOM element's ID attribute.
-         * @param {HTMLElement} itemElem - The action bar item element (e.g., '#actionBarItem16').
-         * @returns {RegExpMatchArray|null} A match array where index 1 contains the numeric ID string, or null if no match is found.
+         * @param {HTMLElement} itemElem - The action bar item element.
+         * @returns {RegExpMatchArray|null} A match array or null.
          */
         getItemIdFromElem(itemElem) {
             return itemElem.id.match(this.data.constants.DOM.ACTION_BAR_ITEM_REGEX);
@@ -516,7 +523,7 @@ C = Added patches
         /**
          * Retrieves the full data object for an item from its corresponding DOM element.
          * @param {HTMLElement} itemElem - The action bar item element.
-         * @returns {object|undefined} The item's data object from the internal database, or undefined if not found.
+         * @returns {object|undefined} The item's data object.
          */
         getItemFromElem(itemElem) {
             const match = this.getItemIdFromElem(itemElem);
@@ -528,8 +535,8 @@ C = Added patches
 
         /**
          * Checks if the player has sufficient resources to afford an item.
-         * @param {object} itemData - The item's data object, which must contain a `cost` property.
-         * @returns {boolean} Returns `true` if the player can afford the item or if it's free, `false` otherwise.
+         * @param {object} itemData - The item's data object.
+         * @returns {boolean} True if the player can afford the item.
          */
         isAffordableItem(itemData) {
             if (!itemData || !itemData.cost) return true; // Free items are always affordable
@@ -542,7 +549,7 @@ C = Added patches
         /**
          * Checks if an item element in the action bar is currently visible and represents a valid item.
          * @param {HTMLElement} itemElem - The action bar item element to check.
-         * @returns {boolean} Returns `true` if the item is visible and has a valid ID, `false` otherwise.
+         * @returns {boolean} True if the item is available.
          */
         isAvailableItem(itemElem) {
             const isVisible = itemElem.style.display !== this.data.constants.CSS.DISPLAY_NONE;
@@ -554,7 +561,7 @@ C = Added patches
         /**
          * Determines if an item can be equipped by checking its availability, affordability, and placement limits.
          * @param {HTMLElement} itemElem - The action bar item element to check.
-         * @returns {boolean} Returns `true` if all conditions (availability, cost, limits) are met.
+         * @returns {boolean} True if all conditions are met.
          */
         isEquippableItem(itemElem) {
             if (!this.isAvailableItem(itemElem)) return false;
@@ -577,9 +584,9 @@ C = Added patches
         },
 
         /**
-         * Checks if a user input element (like chat or menus) is currently focused and visible.
+         * Checks if a user input element is currently focused and visible.
          * @private
-         * @returns {boolean} `true` if an input is focused, `false` otherwise.
+         * @returns {boolean} True if an input is focused.
          */
         isInputFocused() {
             const CoreC = this.data.constants;
@@ -591,12 +598,9 @@ C = Added patches
         },
 
         /**
-         * Observes a specific HTMLElement and resolves a promise once its computed
-         * style property 'display' stops being 'none'.
-         *
+         * Observes an element until its computed style 'display' is not 'none'.
          * @param {HTMLElement} element - The HTML element to observe.
-         * @returns {Promise<HTMLElement>} A promise that resolves with the element itself
-         *   once its display is no longer 'none'. Rejects if the input is not an HTMLElement.
+         * @returns {Promise<HTMLElement>} A promise that resolves with the element.
          */
         waitForVisible(element) {
             if (!element) return Promise.reject();
@@ -625,50 +629,100 @@ C = Added patches
         },
 
         /**
-         * Waits for a list of elements to be present in the DOM.
-         * @param {Object<string, string>} elementMap - An object mapping desired variable names to element IDs (e.g., `{ mainMenu: 'mainMenu', gameUI: 'gameUI' }`).
-         * @returns {Promise<Object<string, HTMLElement>>} A promise that resolves with an object containing the found HTML elements, keyed by the names provided in `elementMap`.
+         * Waits for one or more elements to be present in the DOM.
+         *
+         * @overload
+         * @param {string} elementId - The ID of the single element to wait for.
+         * @returns {Promise<HTMLElement>} A promise that resolves with the found HTML element.
+         *
+         * @overload
+         * @param {string[]} elementIds - An array of element IDs to wait for.
+         * @returns {Promise<HTMLElement[]>} A promise that resolves with an array of the found HTML elements, in the same order as the input array.
+         *
+         * @overload
+         * @param {Object<string, string>} elementMap - An object mapping variable names to element IDs.
+         * @returns {Promise<Object<string, HTMLElement>>} A promise that resolves with an object of the found HTML elements, keyed by the provided variable names.
          */
-        waitForElementsToLoad(elementMap) {
-            return new Promise(resolve => {
-                const foundElements = {}; // This will be keyed by the short names (e.g; 'mainMenu')
+        waitForElementsToLoad(parameter, options = {}) {
+            const { timeout = 5000 } = options; // Default timeout of 5 seconds.
+            let inputType;
+            let elementMap;
+
+            // 1. Normalize Input (this part is largely the same, but slightly refined)
+            if (typeof parameter === 'string') {
+                inputType = 'string';
+                elementMap = { [parameter]: parameter };
+            } else if (Array.isArray(parameter)) {
+                inputType = 'array';
+                // A more modern/declarative way to convert an array to a map
+                elementMap = Object.fromEntries(parameter.map(id => [id, id]));
+            } else if (typeof parameter === 'object' && parameter !== null && !Array.isArray(parameter)) {
+                inputType = 'object';
+                elementMap = parameter;
+            } else {
+                return Promise.reject(new TypeError('Invalid argument. Must be a string, array of strings, or an object.'));
+            }
+
+            // 2. Core Waiting Logic (significantly improved)
+            const corePromise = new Promise((resolve, reject) => {
+                const foundElements = {};
+                // Use a Set for efficient lookup and deletion of keys we still need to find.
+                const remainingKeys = new Set(Object.keys(elementMap));
+                let observer; // Declare here to be accessible in timeout
+
+                const timeoutId = setTimeout(() => {
+                    observer?.disconnect(); // Stop observing on timeout
+                    const missingIds = Array.from(remainingKeys).map(key => elementMap[key]);
+                    reject(new Error(`Timed out after ${timeout}ms. Could not find elements with IDs: ${missingIds.join(', ')}`));
+                }, timeout);
 
                 const checkElements = () => {
-                    let allFound = true;
-                    // Iterate over the map [shortName, id]
-                    for (const [shortName, id] of Object.entries(elementMap)) {
-                        if (!foundElements[shortName]) { // Only check for elements we haven't found yet
-                            const element = document.getElementById(id);
-                            if (element) {
-                                foundElements[shortName] = element;
-                            } else {
-                                allFound = false; // At least one is still missing
-                            }
+                    // Only iterate over the keys of elements we haven't found yet.
+                    for (const key of remainingKeys) {
+                        const id = elementMap[key];
+                        const element = document.getElementById(id);
+                        if (element) {
+                            foundElements[key] = element;
+                            remainingKeys.delete(key); // KEY IMPROVEMENT: Stop looking for this element.
                         }
                     }
-                    return allFound;
-                };
 
-                // First, check if they're already there.
-                if (checkElements()) {
-                    resolve(foundElements);
-                    return;
-                }
-
-                // If not, set up an observer to watch for changes.
-                const observer = new MutationObserver(() => {
-                    if (checkElements()) {
-                        observer.disconnect(); // Stop observing once we've found everything
+                    // If the set is empty, we've found everything.
+                    if (remainingKeys.size === 0) {
+                        clearTimeout(timeoutId); // Success, so clear the timeout.
+                        observer?.disconnect();
                         resolve(foundElements);
                     }
-                });
+                };
 
-                // Start observing the entire document for additions of new nodes.
-                observer.observe(document.body, {
-                    childList: true,
-                    subtree: true
-                });
-                this.state.observers.push(observer);
+                // Set up the observer to only call our efficient checker.
+                observer = new MutationObserver(checkElements);
+
+                // Perform an initial check in case elements are already on the page.
+                checkElements();
+
+                // If the initial check didn't find everything, start observing.
+                if (remainingKeys.size > 0) {
+                    observer.observe(document.body, { childList: true, subtree: true });
+                    // Assuming 'this.state.observers' exists from your original context
+                    if (this.state && this.state.observers) {
+                        this.state.observers.push(observer);
+                    }
+                }
+            });
+
+            // 3. Format Output (unchanged, but now attached to the more robust promise)
+            return corePromise.then(foundElements => {
+                switch (inputType) {
+                    case 'string':
+                        return Object.values(foundElements)[0];
+                    case 'array':
+                        return parameter.map(id => foundElements[id]);
+                    case 'object':
+                        return foundElements;
+                    default:
+                        throw new Error(`Internal Error: Unhandled inputType "${inputType}" in waitForElementsToLoad.`);
+                }
             });
         },
 
@@ -677,7 +731,7 @@ C = Added patches
          * changed by JavaScript. A 'data-locked-styles' attribute is added to the element
          * for easy inspection, acting as the single source of truth for the lock state.
          *
-         * @param {string} propertyName - The name of the style property to lock (e.g., 'display').
+         * @param {string} propertyName - The name of the style property to lock.
          * @param {HTMLElement[]} elements - An array of HTMLElements to affect.
          * @returns {void}
          */
@@ -722,8 +776,7 @@ C = Added patches
         },
 
         /**
-        * Unlocks a CSS style property on an array of elements by deleting the custom
-        * lock override, restoring its default browser behavior. The 'data-locked-styles'
+        * Unlocks a CSS style property on an array of elements, allowing to be changed by JavaScript. The 'data-locked-styles'
         * attribute is updated or removed.
         *
         * @param {string} propertyName - The name of the style property to unlock.
@@ -763,8 +816,7 @@ C = Added patches
 
         /**
          * Returns a Promise that resolves on the next animation frame.
-         * A helper for ensuring DOM updates are painted.
-         * @returns {Promise<void>} A promise that resolves after the next browser repaint.
+         * @returns {Promise<void>}
          */
         waitTillNextFrame() {
             return new Promise(resolve => requestAnimationFrame(resolve));
@@ -773,7 +825,7 @@ C = Added patches
         /**
          * Returns a Promise that resolves after a specified delay.
          * @param {number} ms - The delay in milliseconds.
-         * @returns {Promise<void>} A promise that resolves after the specified delay.
+         * @returns {Promise<void>}
          */
         wait(ms) {
             return new Promise(resolve => setTimeout(resolve, ms));
@@ -782,11 +834,9 @@ C = Added patches
         // --- CORE INTERNAL FUNCTIONS ---
 
         /**
-         * Encodes and sends a packet to the game server via WebSocket.
-         * It safely handles the encoding and ensures the socket is ready before attempting to send.
-         *
-         * @param {string} type - The one-character identifier for the packet type (e.g., 'z' for equip, 'c' for wearable).
-         * @param {any[]} data - The payload/data for the packet, typically an array of arguments.
+         * Encodes and sends a packet to the game server.
+         * @param {string} type - The one-character packet identifier.
+         * @param {any[]} data - The payload data for the packet.
          * @returns {void}
          */
         sendGamePacket(type, data) {
@@ -833,8 +883,10 @@ C = Added patches
 
                     case 'Server Shutdown Notice': {
                         const { countdown } = packetData;
+                        const CoreC = this.data.constants;
+                        const shutdownDisplay = document.getElementById(CoreC.DOM.SHUTDOWN_DISPLAY);
                                         
-                        if (countdown < 0) return;
+                        if (countdown < 0 || !shutdownDisplay) return;
                     
                         var minutes = Math.floor(countdown / 60);
                         var seconds = countdown % 60;
@@ -883,7 +935,7 @@ C = Added patches
         // --- INITIALIZATION & HOOKING ---
 
         /**
-         * Collects CSS from the core mod and all registered mini-mods and injects it into a single style tag in the document's head.
+         * Collects and injects CSS from the core mod and all registered mini-mods.
          * @returns {void}
          */
         injectCSS() {
@@ -918,8 +970,8 @@ C = Added patches
         },
 
         /**
-         * Returns the CSS styles for the core mod, such as the title screen enhancement.
-         * @returns {string} The CSS string for core functionalities.
+         * Provides the CSS styles to be applied for the core mod.
+         * @returns {string} The CSS string.
          */
         applyCoreCSS() {
             const CoreC = this.data.constants;
@@ -927,52 +979,52 @@ C = Added patches
                 #${CoreC.DOM.GAME_TITLE} {
                     --text-shadow-colour: oklch(from currentColor calc(l * 0.82) c h);
                     text-shadow: 0 1px 0 var(--text-shadow-colour),   0 2px 0 var(--text-shadow-colour),   0 3px 0 var(--text-shadow-colour),   0 4px 0 var(--text-shadow-colour),   0 5px 0 var(--text-shadow-colour),   0 6px 0 var(--text-shadow-colour),   0 7px 0 var(--text-shadow-colour),   0 8px 0 var(--text-shadow-colour),   0 9px 0 var(--text-shadow-colour);
+                
+                    & > span {
+                        color: oklch(0.95 0.05 92.5);
+                    }
                 }
-                #${CoreC.DOM.GAME_TITLE} > span {
-                    color: oklch(0.95 0.05 92.5);
-                }
+
                 #${CoreC.DOM.LOADING_INFO} {
                     color: #fff;
                     text-align: center;
                     font-size: 22.5px;
                 }
+
+                #${CoreC.DOM.LEFT_CARD_HOLDER} {
+                    display: inline-block;
+                    vertical-align: top;
+                }
+
+                #${CoreC.DOM.AD_HOLDER} {
+                    display: block;
+
+                    & > .${CoreC.DOM.MENU_CARD} {
+                        margin: 0;
+                    }
+                }
+
+                :is(#${CoreC.DOM.LEFT_CARD_HOLDER}, #${CoreC.DOM.RIGHT_CARD_HOLDER}) > .${CoreC.DOM.MENU_CARD} {
+                    min-height: 250px;
+                }
             `;
         },
 
         /**
-         * Updates the main menu title screen and injects necessary UI elements. This method
-         * will wait for the title element to appear in the DOM if it's not immediately available.
+         * Updates the main menu title screen.
          * @returns {void}
          */
         updateGameTitleScreen() {
             const CoreC = this.data.constants;
 
-            const setupUI = () => {
-                if (!this.state.enabled) return true; // Already disabled, no need to proceed.
-
-                const titleElem = document.getElementById(CoreC.DOM.GAME_TITLE);
-                if (!titleElem) return false; // Indicate failure
-                
-                // Update Title
+            this.waitForElementsToLoad(CoreC.DOM.GAME_TITLE).then((titleElem) => {
+                if (!this.state.enabled) return;
                 titleElem.innerHTML = `MOOMOO<span>.</span>io`;
-                Logger.log("Updated game title screen.", "color: #4CAF50;");
-
-                return true; // Indicate success                
-            };
-
-            if (setupUI()) return;
-
-            const observer = new MutationObserver((mutationsList, obs) => {
-                if (setupUI()) obs.disconnect();
             });
-
-            observer.observe(document.body, { childList: true, subtree: true });
-            this.state.observers.push(observer);
         },
 
         /**
-         * Centralized method to manage the visibility of core game UI elements,
-         * allowing easy switching between gameplay, main menu, and loading/error screens.
+         * Manages the visibility of core game UI screens.
          * @param {'showError' | 'showGameplay' | 'showMenu'} state - The UI state to display.
          * @returns {void}
          */
@@ -1034,8 +1086,9 @@ C = Added patches
         },
 
         /**
-         * Updates or injects the loading UI element to provide feedback during connection attempts.
-         * @param {string} message - The message to display in the loading info element.
+         * Updates the loading/error UI screen with a message to provide feedback during connection attempts.
+         * @private
+         * @param {string} message - The message to display.
          * @returns {void}
          */
         _updateLoadingUI(message) {
@@ -1050,7 +1103,8 @@ C = Added patches
                 const loadingText = document.getElementById(CoreC.DOM.LOADING_TEXT);
                 const syncDisplayCallback = () => {
                     const newDisplayStyle = window.getComputedStyle(loadingText).display;
-                    if (getLoadingInfoElem().style.display !== newDisplayStyle) {
+                    const loadingInfo = getLoadingInfoElem();
+                    if (loadingInfo && loadingInfo.style.display !== newDisplayStyle) {
                         loadingInfo.style.display = newDisplayStyle;
                     }
                 };
@@ -1062,10 +1116,11 @@ C = Added patches
         },
 
         /**
-         * Handles the scenario where the script fails to hook codecs. It displays
-         * a message and prompts for a reload. If the user cancels, the mod will be disabled.
-         * @param {boolean} [afterGameEnter=false] - If true, indicates the failure happened after the player entered the game.
-         * @returns {Promise<void>} A promise that resolves after the reload logic is complete.
+         * Handles the scenario where the script fails to hook codecs and prompts for a reload.
+         * If reload prompt is cancelled, disables mod.
+         * @private
+         * @param {boolean} [afterGameEnter=false] - If true, indicates failure happened after entering the game.
+         * @returns {Promise<void>}
          */
         async handleHookFailureAndReload(afterGameEnter = false) {
             if (!this.state.enabled) return; // Already disabled, no need to proceed.
@@ -1110,9 +1165,8 @@ C = Added patches
         },
 
         /**
-         * Checks if both codecs and the WebSocket are ready. If so, performs the final
-         * setup by attaching all necessary event listeners. This function ensures that
-         * we don't try to attach listeners prematurely.
+         * Checks if codecs and WebSocket are ready and performs final setup.
+         * @private
          * @returns {void}
          */
         attemptFinalSetup() {
@@ -1126,12 +1180,10 @@ C = Added patches
         },
 
         /**
-         * Finds the game's msgpack encoder/decoder instances by hooking into Object.prototype.
-         * It temporarily redefines a property setter on Object.prototype. When the game's code
-         * creates an object with a specific property (like 'initialBufferSize'), our setter
-         * fires, allowing us to grab a reference to that object.
-         * @param {string} propName - The unique property name to watch for (e.g., 'initialBufferSize').
-         * @param {Function} onFound - The callback function to execute when the target object is found, passing the object as an argument.
+         * Finds game's msgpack instances by hooking into Object.prototype.
+         * @private
+         * @param {string} propName - The unique property name to watch for.
+         * @param {Function} onFound - The callback to execute when the object is found.
          * @returns {void}
          */
         hookIntoPrototype(propName, onFound) {
@@ -1170,7 +1222,8 @@ C = Added patches
         },
 
         /**
-         * Sets up hooks into Object.prototype to capture the game's msgpack encoder and decoder instances.
+         * Sets up hooks to capture the game's msgpack encoder and decoder instances.
+         * @private
          * @returns {void}
          */
         initializeHooks() {
@@ -1190,8 +1243,8 @@ C = Added patches
         },
 
         /**
-         * Attempts to intercept and modify the game's main script to inject code that exposes
-         * the msgpack encoder and decoder to the global window object.
+         * Intercepts and modifies the game's main script to expose codecs.
+         * @private
          * @returns {void}
          */
         interceptGameScript() {
@@ -1286,7 +1339,8 @@ C = Added patches
         },
 
         /**
-         * Sets up the WebSocket proxy to capture the game's connection instance.
+         * Sets up a WebSocket proxy to capture the game's connection instance.
+         * @private
          * @returns {void}
          */
         setupWebSocketProxy() {
@@ -1317,8 +1371,8 @@ C = Added patches
         },
 
         /**
-         * Runs once the WebSocket is established and the player has spawned. This function
-         * serves as a notification point for all minimods that the game is fully ready.
+         * Runs once the player has spawned, notifying minimods that the game is fully ready.
+         * @private
          * @returns {void}
          */
         onGameReady() {
@@ -1330,7 +1384,7 @@ C = Added patches
                     if (typeof mod.onGameReady === 'function') mod.onGameReady();
                 });
 
-                const shutdownDisplay = document.getElementById('shutdownDisplay');
+                const shutdownDisplay = document.getElementById(this.data.constants.DOM.SHUTDOWN_DISPLAY);
                 if (shutdownDisplay) shutdownDisplay.hidden = false;
             } catch(e) {
                 Logger.error("Failed during onGameReady setup.", e);
@@ -1338,13 +1392,12 @@ C = Added patches
         },
 
         /**
-         * The main entry point for the script. Initializes data, sets up hooks,
-         * injects CSS, and initializes all registered minimods.
+         * The main entry point for the script.
          * @returns {void}
          */
         init() {
             // Exposes the logger to the global window object for debugging purposes.
-            if (MooMooUtilityMod.config.DEBUG_MODE) window.Logger = Logger;
+            if (this.config.DEBUG_MODE) window.Logger = Logger;
             
             Logger.log("--- MOOMOO.IO Utility Mod Initializing ---", "color: #ffb700; font-weight: bold;");
 
@@ -1362,11 +1415,10 @@ C = Added patches
                 // We use time until main menu is loaded & visible, to get a good baseline for CPU/Network speeds.
                 this.waitForVisible(mainMenu).then(() => {
                     setTimeout(() => {
-                        if (!this.state.enabled) return; // Already disabled
-                        if (!this.state.codecsReady) {
-                            Logger.error("Hooks failed to find codecs within the time limit.");
-                            this.handleHookFailureAndReload();
-                        }
+                        if (!this.state.enabled || this.state.codecsReady) return; // Already disabled
+
+                        Logger.error("Hooks failed to find codecs within the time limit.");
+                        this.handleHookFailureAndReload();
                     }, (Date.now() - this.state.initTimestamp) * 2.5); // If no success after 1.5x the mainMenu, assume failure.
                 });
             });
@@ -1393,7 +1445,7 @@ C = Added patches
             });
 
             // Exposes the core to the global window object for debugging purposes.
-            if (MooMooUtilityMod.config.DEBUG_MODE) window.MooMooUtilityMod = this;
+            if (this.config.DEBUG_MODE) window.MooMooUtilityMod = this;
         },
 
         // --- MINI-MOD MANAGEMENT ---
@@ -1402,9 +1454,8 @@ C = Added patches
         miniMods: [],
 
         /**
-         * Adds a mini-mod to the system. The core module will then manage its lifecycle
-         * (init, cleanup, packet handling, etc.).
-         * @param {object} mod - The mini-mod object to register. It should conform to the minimod API structure.
+         * Adds a mini-mod to the system.
+         * @param {object} mod - The mini-mod object to register.
          * @returns {void}
          */
         registerMod(mod) {
@@ -1416,6 +1467,473 @@ C = Added patches
     };
 
     /**
+     * @module SettingsManagerMiniMod
+     * @description Manages loading, saving, and displaying a UI for all mod settings.
+     */
+    const SettingsManagerMiniMod = {
+        /** @property {object|null} core - A reference to the core module, set upon registration. */
+        core: null,
+
+        /** @property {string} name - The display name of the minimod. */
+        name: "Core Settings",
+
+        /** @property {object} constants - Constants specific to this minimod. */
+        constants: {
+            LOCALSTORAGE_KEY: 'MooMooUtilMod_Settings',
+            DOM: {
+                MOD_CARD: 'modCard',
+
+                SETTINGS_CATEGORY_CLASS: 'settings-category',
+                SETTING_ITEM_CLASS: 'setting-item',
+                SETTING_ITEM_CONTROL_CLASS: 'setting-item-control',
+                KEYBIND_INPUT_CLASS: 'keybind-input',
+                RESET_SETTING_BTN_CLASS: 'reset-setting-btn',
+                RESET_ALL_BUTTON_CLASS: 'reset-all-button',
+            },
+            TEXT: {
+                MOD_SETTINGS_HEADER: 'Mod Settings',
+                RESET_BUTTON_TEXT: 'Reset',
+                RESET_BUTTON_TITLE: 'Reset to default',
+                RESET_ALL_BUTTON_TEXT: 'Reset All Settings',
+                RESET_ALL_CONFIRM: 'Are you sure you want to reset all mod settings to their defaults? The page will reload.',
+                KEYBIND_FOCUS_TEXT: '...',
+            },
+        },
+        
+        /** @property {object} state - Dynamic state for this minimod. */
+        state: {
+            /** @property {object} savedSettings - Settings loaded from localStorage. */
+            savedSettings: {},
+            /** @property {object} defaultSettings - A temporary store of default settings for the reset feature. */
+            defaultSettings: {},
+        },
+
+        /** @property {object} config - Holds user-configurable settings. */
+        config: {
+            /** @property {boolean} isPanelVisible - Toggle whether or not to show/hide the panel. */
+            isPanelVisible: true,
+        },
+
+        // --- MINI-MOD LIFECYCLE & HOOKS ---
+        
+        /**
+         * Initializes the settings panel creation.
+         * @returns {void}
+         */
+        init() {
+            this.createAndInjectSettingsCard();
+
+            this.loadSettings();
+            this.applySettingsToAllMods();
+        },
+
+        /**
+         * Returns the CSS rules required for styling the settings panel.
+         * @returns {string} The complete CSS string.
+         */
+        applyCSS() {
+            const LocalC = this.constants;
+            return `
+                #${LocalC.DOM.MOD_CARD} {
+                    max-height: 250px;
+                    overflow-y: auto;
+                    -webkit-overflow-scrolling: touch;
+                }
+
+                #${LocalC.DOM.MOD_CARD} .menuHeader {
+                    margin-top: 10px;
+                }
+
+                #${LocalC.DOM.MOD_CARD} .${LocalC.DOM.SETTINGS_CATEGORY_CLASS} {
+                    margin-bottom: 20px;
+
+                    & .menuHeader {
+                        font-size: 20px;
+                        color: #4a4a4a;
+                    }
+                }
+
+                #${LocalC.DOM.MOD_CARD} .${LocalC.DOM.SETTING_ITEM_CLASS} {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-bottom: 10px;
+                    font-size: 18px; /* Matched to game's .settingRadio */
+                    color: #a8a8a8;
+                }
+                
+                #${LocalC.DOM.MOD_CARD} .${LocalC.DOM.SETTING_ITEM_CONTROL_CLASS} {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px; /* Space between input and reset button */
+                }
+
+                #${LocalC.DOM.MOD_CARD} .${LocalC.DOM.SETTING_ITEM_CLASS} label {
+                    line-height: 1.2;
+                    width: 180px;
+                    color: #777777;
+                    
+                    & small {
+                        display: block;
+                        font-size: 14px;
+                        color: #c0c0c0;
+                    }
+                }
+
+                /* Match game's native input look */
+                #${LocalC.DOM.MOD_CARD} input[type="text"],
+                #${LocalC.DOM.MOD_CARD} input[type="number"] {
+                    text-align: center;
+                    font-size: 14px;
+                    padding: 4px;
+                    border: none;
+                    outline: none;
+                    box-sizing: border-box;
+                    color: #4A4A4A;
+                    background-color: #e5e3e3;
+                    width: 5.5ch;
+                    border-radius: 4px;
+
+                    &[type="number"] {
+                        text-align: start;
+                        padding-left: 8px;
+                    }
+                }
+                    
+                #${LocalC.DOM.MOD_CARD} .${LocalC.DOM.KEYBIND_INPUT_CLASS} {
+                    cursor: pointer;
+                    text-transform: uppercase;
+
+                    &:focus {
+                        background-color: #d0d0d0;
+                    }
+                }
+                
+                #${LocalC.DOM.MOD_CARD} .${LocalC.DOM.RESET_SETTING_BTN_CLASS} {
+                    font-size: 14px;
+                    color: #d0635c;
+                    cursor: pointer;
+
+                    &:hover {
+                        color: #984742;
+                        text-decoration: underline;
+                    }
+                }
+
+                /* Button styling to match game's .menuButton */
+                #${LocalC.DOM.MOD_CARD} .${LocalC.DOM.RESET_ALL_BUTTON_CLASS} {
+                    font-size: 18px;
+                    padding: 5px;
+                    margin-top: 10px;
+                    background-color: #f75d59; /* Red for reset/danger */
+                    
+                    &:hover {
+                        background-color: #ea6b64;
+                    }
+                }
+            `;
+        },
+
+        // --- CORE LOGIC ---
+
+        /**
+         * Loads settings from localStorage into the state.
+         * @returns {void}
+         */
+        loadSettings() {
+            try {
+                const saved = localStorage.getItem(this.constants.LOCALSTORAGE_KEY);
+                this.state.savedSettings = saved ? JSON.parse(saved) : {};
+                Logger.log("Settings loaded from localStorage.", "color: lightblue;");
+            } catch (e) {
+                Logger.error("Failed to load settings from localStorage.", e);
+                this.state.savedSettings = {};
+            }
+        },
+
+        /**
+         * Saves a single setting value to localStorage.
+         * @param {string} key - The unique ID of the setting.
+         * @param {any} value - The value to save.
+         * @returns {void}
+         */
+        saveSetting(key, value) {
+            this.state.savedSettings[key] = value;
+            localStorage.setItem(this.constants.LOCALSTORAGE_KEY, JSON.stringify(this.state.savedSettings));
+        },
+
+        /**
+         * Applies all loaded settings to their respective mods' config objects.
+         * @returns {void}
+         */
+        applySettingsToAllMods() {
+            this.state.defaultSettings = {}; // Clear previous defaults
+            
+            const allMods = this.core.miniMods;
+            allMods.forEach(mod => {
+                if (!mod.getSettings) return;
+                const configObj = mod.name === 'Core' ? this.core.config : mod.config;
+
+                mod.getSettings().forEach(setting => {
+                    // Store the default value before creating the input
+                    this.state.defaultSettings[setting.id] = mod.config[setting.configKey];
+
+                    const savedValue = this.state.savedSettings[setting.id];
+                    if (savedValue !== undefined) {
+                        configObj[setting.configKey] = savedValue;
+                    }
+                });
+            });
+            Logger.log("Applied saved settings to all modules.");
+        },
+
+        /**
+         * Clears all mod settings from localStorage and reloads the page.
+         * @returns {void}
+         */
+        resetAllSettings() {
+            localStorage.removeItem(this.constants.LOCALSTORAGE_KEY);
+            this.state.savedSettings = {};
+            // Reload the page to apply all defaults cleanly
+            window.location.reload();
+        },
+
+        // --- UI GENERATION ---
+        
+        /**
+         * Rearranges the main menu to create and inject the settings card.
+         * @returns {Promise<void>}
+         */
+        createAndInjectSettingsCard() {
+            const CoreC = this.core.data.constants;
+            const LocalC = this.constants;
+
+            return this.core.waitForElementsToLoad({
+                adHolder: CoreC.DOM.AD_HOLDER,
+                menuCardHolder: CoreC.DOM.MENU_CARD_HOLDER
+            }).then(({ adHolder, menuCardHolder }) => {
+                if (!this.config.isPanelVisible) return; // Check if the settings mod itself is enabled
+
+                const wideAdCard = menuCardHolder.nextElementSibling;
+                if (wideAdCard) {
+                    menuCardHolder.before(wideAdCard);
+                }
+
+                const adCard = menuCardHolder.firstElementChild;
+                if (adCard) {
+                    adHolder.append(adCard);
+                }
+
+                const rightCardHolder = menuCardHolder.lastElementChild;
+                if (!rightCardHolder) return; // Safety check
+
+                const leftCardHolder = rightCardHolder.cloneNode(true);
+                leftCardHolder.id = CoreC.DOM.LEFT_CARD_HOLDER;
+
+                const modCard = leftCardHolder.firstElementChild;
+                modCard.id = LocalC.DOM.MOD_CARD;
+                modCard.innerHTML = ''; // Clear the cloned content
+
+                menuCardHolder.className = Date.now();
+                menuCardHolder.prepend(leftCardHolder);
+
+                // Now that the card exists, populate it with the settings.
+                this.populateSettingsPanel(modCard);
+            });
+        },
+
+        /**
+         * Removes the settings card from the DOM.
+         * @returns {void}
+         */
+        showSettingsCard() {
+            const CoreC = this.core.data.constants;
+
+            const leftCardHolder = document.getElementById(CoreC.DOM.LEFT_CARD_HOLDER);
+            if (leftCardHolder) leftCardHolder.style.removeProperty('display');
+            
+            const menuCardHolder = document.getElementById(CoreC.DOM.MENU_CARD_HOLDER);
+            const promoImgHolder = document.getElementById(CoreC.DOM.AD_HOLDER);
+            const wideAdCard = document.getElementById(CoreC.DOM.WIDE_AD_CARD);
+            const adCard = document.getElementById(CoreC.DOM.AD_CARD);
+            
+            if (menuCardHolder.previousElementSibling !== wideAdCard) menuCardHolder.before(wideAdCard);
+            if (promoImgHolder.lastElementChild !== adCard) promoImgHolder.append(adCard);
+        },
+
+        /**
+         * Removes the settings card from the DOM.
+         * @returns {void}
+         */
+        removeSettingsCard() {
+            const CoreC = this.core.data.constants;
+
+            const leftCardHolder = document.getElementById(CoreC.DOM.LEFT_CARD_HOLDER);
+            if (leftCardHolder) leftCardHolder.style.setProperty('display', 'none');
+            
+            const menuCardHolder = document.getElementById(CoreC.DOM.MENU_CARD_HOLDER);
+            const promoImgHolder = document.getElementById(CoreC.DOM.AD_HOLDER);
+            const wideAdCard = document.getElementById(CoreC.DOM.WIDE_AD_CARD);
+            const adCard = document.getElementById(CoreC.DOM.AD_CARD);
+
+            if (menuCardHolder.nextElementSibling !== wideAdCard) menuCardHolder.after(wideAdCard);
+            if (menuCardHolder.firstElementChild !== adCard) menuCardHolder.prepend(adCard);
+        },
+
+        /**
+         * Fills the settings panel with inputs for all registered mods.
+         * @param {HTMLElement} panel - The 'modCard' element to fill.
+         * @returns {void}
+         */
+        populateSettingsPanel(panel) {
+            const LocalC = this.constants;
+            panel.innerHTML = `<div class="menuHeader">${LocalC.TEXT.MOD_SETTINGS_HEADER}</div>`;
+
+            const allMods = this.core.miniMods;
+
+            allMods.forEach(mod => {
+                if (!mod.getSettings) return;
+
+                const settings = mod.getSettings();
+                if (settings.length === 0) return;
+
+                const categoryDiv = document.createElement('div');
+                categoryDiv.className = LocalC.DOM.SETTINGS_CATEGORY_CLASS;
+                categoryDiv.innerHTML = `<div class="menuHeader">${mod.name}</div>`;
+                panel.append(categoryDiv);
+
+                settings.forEach(setting => {
+                    const itemDiv = this.createSettingInput(setting, mod.config, mod);
+                    categoryDiv.append(itemDiv);
+                });
+            });
+            
+            const itemDiv = document.createElement('div');
+            itemDiv.className = `menuButton ${LocalC.DOM.RESET_ALL_BUTTON_CLASS}`;
+            itemDiv.textContent = LocalC.TEXT.RESET_ALL_BUTTON_TEXT;
+            itemDiv.addEventListener('click', () => {
+                if (window.confirm(LocalC.TEXT.RESET_ALL_CONFIRM)) {
+                    this.resetAllSettings();
+                }
+            });
+
+            panel.append(itemDiv);
+        },
+
+        /**
+         * Creates a single HTML input element for a given setting definition.
+         * @param {object} setting - The setting definition object.
+         * @param {object} config - The config object of the mod the setting belongs to.
+         * @param {object} mod - The mod object itself.
+         * @returns {HTMLElement} The generated setting item element.
+         */
+        createSettingInput(setting, config, mod) {
+            const LocalC = this.constants;
+            const itemDiv = document.createElement('div');
+            itemDiv.className = LocalC.DOM.SETTING_ITEM_CLASS;
+            let currentValue = config[setting.configKey];
+
+            let controlHtml = '';
+            switch (setting.type) {
+                case 'checkbox':
+                    controlHtml = `<input type="checkbox" id="${setting.id}" ${currentValue ? 'checked' : ''}>`;
+                    break;
+                case 'keybind':
+                    controlHtml = `<input type="text" class="${LocalC.DOM.KEYBIND_INPUT_CLASS}" id="${setting.id}" value="${currentValue}" readonly>`;
+                    break;
+                case 'number':
+                    controlHtml = `<input type="number" id="${setting.id}" value="${currentValue}" min="${setting.min || 0}" max="${setting.max || 10000}" step="${setting.step || 1}">`;
+                    break;
+            }
+
+            // Add a reset button for settings that are not buttons
+            const resetButtonHtml = `<div class="${LocalC.DOM.RESET_SETTING_BTN_CLASS}" title="${LocalC.TEXT.RESET_BUTTON_TITLE}">${LocalC.TEXT.RESET_BUTTON_TEXT}</div>`;
+
+            itemDiv.innerHTML = `
+                <label for="${setting.id}">
+                    ${setting.label}
+                    ${setting.desc ? `<small>${setting.desc}</small>` : ''}
+                </label>
+                <div class="${LocalC.DOM.SETTING_ITEM_CONTROL_CLASS}">
+                    ${controlHtml}
+                    ${resetButtonHtml}
+                </div>
+            `;
+
+            const input = itemDiv.querySelector('input');
+            const resetButton = itemDiv.querySelector(`.${LocalC.DOM.RESET_SETTING_BTN_CLASS}`);
+
+            const updateSetting = (newValue) => {
+                // Update the live config object
+                config[setting.configKey] = newValue;
+
+                // Save to local storage if it's not a temporary setting
+                if (setting.save !== false) {
+                    this.saveSetting(setting.id, newValue);
+                }
+                
+                // Trigger any immediate callback
+                if (setting.onChange) {
+                    setting.onChange(newValue, this.core);
+                }
+            };
+            
+            resetButton.addEventListener('click', () => {
+                const defaultValue = this.state.defaultSettings[setting.id];
+                if (setting.type === 'checkbox') {
+                    input.checked = defaultValue;
+                } else {
+                    input.value = defaultValue;
+                }
+                updateSetting(defaultValue);
+            });
+
+            if (setting.type === 'keybind') {
+                input.addEventListener('focus', () => input.value = LocalC.TEXT.KEYBIND_FOCUS_TEXT);
+                input.addEventListener('blur', () => input.value = config[setting.configKey]);
+                input.addEventListener('keydown', e => {
+                    e.preventDefault();
+                    const key = e.key.toUpperCase();
+                    input.value = key;
+                    updateSetting(key);
+                    input.blur();
+                });
+            } else {
+                input.addEventListener('change', () => {
+                    const value = setting.type === 'checkbox' ? input.checked : (setting.type === 'number' ? Number(input.value) : input.value);
+                    updateSetting(value);
+                });
+            }
+            return itemDiv;
+        },
+
+        /**
+         * Defines the settings that will appear in the panel for this minimod itself.
+         * @returns {Array<object>} An array of setting definition objects.
+         */
+        getSettings() {
+            return [
+                {
+                    id: 'settings_panel_enabled',
+                    configKey: 'isPanelVisible',
+                    label: 'Show Mod Settings',
+                    desc: 'Hides or shows this settings card.',
+                    type: 'checkbox',
+                    save: false, // This setting is NOT saved to localStorage
+                    onChange: (value) => {
+                        this.config.isPanelVisible = value;
+                        if (value) {
+                            this.showSettingsCard();
+                        } else {
+                            this.removeSettingsCard();
+                        }
+                    }
+                }
+            ];
+        },
+    };
+
+    /**
      * @module ScrollInventoryMiniMod
      * @description A minimod for Minecraft-style inventory selection with the scroll wheel and hotkeys.
      */
@@ -1423,11 +1941,19 @@ C = Added patches
 
         // --- MINI-MOD PROPERTIES ---
 
-        /** @property {object|null} core - A reference to the core module object, set upon registration. */
+        /** @property {object|null} core - A reference to the core module. */
         core: null,
 
         /** @property {string} name - The display name of the minimod. */
-        name: "Scroll Wheel Inventory",
+        name: "Scrollable Inventory",
+
+        /** @property {object} config - Holds user-configurable settings. */
+        config: {
+            /** @property {boolean} enabled - Master switch for this minimod. */
+            enabled: true,
+            /** @property {boolean} INVERT_SCROLL - If true, reverses the scroll direction for item selection. */
+            INVERT_SCROLL: false
+        },
 
         /** @property {object} constants - Constants specific to this minimod. */
         constants: {
@@ -1452,17 +1978,40 @@ C = Added patches
             boundHandlers: {},
         },
 
+        /**
+         * Defines the settings for this minimod.
+         * @returns {Array<object>} An array of setting definition objects.
+         */
+        getSettings() {
+            return [
+                {
+                    id: 'scroll_inv_enabled',
+                    configKey: 'enabled',
+                    label: 'Enable Scroll Inventory',
+                    desc: 'Use scroll wheel to cycle through items.',
+                    type: 'checkbox'
+                },
+                {
+                    id: 'scroll_inv_invert',
+                    configKey: 'INVERT_SCROLL',
+                    label: 'Invert Scroll Direction',
+                    desc: 'Changes which way the selection moves.',
+                    type: 'checkbox'
+                }
+            ];
+        },
+
         // --- MINI-MOD LIFECYCLE & HOOKS ---
 
         /**
-         * Handles incoming game packets to update the minimod's state, such as player resources,
-         * item counts, and player ID. This acts as a dispatcher for various packet types.
-         *
-         * @param {string} packetName - The human-readable name of the incoming packet (e.g., 'Update Player Value').
-         * @param {object} packetData - The parsed data object from the incoming packet.
+         * Handles incoming game packets to update the minimod's state.
+         * @param {string} packetName - The human-readable name of the packet.
+         * @param {object} packetData - The parsed data object from the packet.
          * @returns {void}
          */
         onPacket(packetName, packetData) {
+            if (!this.config.enabled) return;
+            
             switch (packetName) {
                 case 'Setup Game': {
                     // Stores the client's player ID upon initial connection.
@@ -1512,11 +2061,12 @@ C = Added patches
         },
 
         /**
-         * Adds necessary event listeners to the document (for wheel and keydown) and the
-         * action bar (for clicks) to handle all forms of inventory interaction.
+         * Adds all necessary event listeners for this minimod.
          * @returns {void}
          */
         addEventListeners() {
+            if (!this.config.enabled) return;
+            
             const CoreC = this.core.data.constants;
 
             this.state.boundHandlers.handleInventoryScroll = this.handleInventoryScroll.bind(this);
@@ -1529,7 +2079,7 @@ C = Added patches
         },
 
         /**
-         * Cleans up by removing all event listeners that were added by this minimod.
+         * Cleans up by removing all event listeners added by this minimod.
          * @returns {void}
          */
         cleanup() {
@@ -1543,11 +2093,12 @@ C = Added patches
         },
 
         /**
-         * Called when the game is ready (player has spawned). It scrapes the initial
-         * resource state from the DOM and selects the first available weapon.
+         * Called when the player has spawned. Scrapes initial state and sets up UI.
          * @returns {void}
          */
         onGameReady() {
+            if (!this.config.enabled) return;
+            
             const CoreC = this.core.data.constants;
 
             // Wait for Game UI to load before proceeding
@@ -1570,30 +2121,33 @@ C = Added patches
         // --- EVENT HANDLERS ---
 
         /**
-         * The main handler for the 'wheel' event. It prevents default scroll behavior and
-         * triggers an inventory selection update based on the scroll direction.
+         * Handles the 'wheel' event to cycle through inventory items.
          * @param {WheelEvent} event - The DOM wheel event.
          * @returns {void}
          */
         handleInventoryScroll(event) {
+            if (!this.config.enabled) return;
+            
             const CoreC = this.core.data.constants;
             if (this.core.isInputFocused() || !this.core.state.gameSocket || this.core.state.gameSocket.readyState !== CoreC.GAME_STATE.WEBSOCKET_STATE_OPEN) return;
 
             event.preventDefault();
 
             // Determine scroll direction and send to refresh selection UI function.
-            const scrollDirection = event.deltaY > 0 ? CoreC.GAME_STATE.SCROLL_DOWN : CoreC.GAME_STATE.SCROLL_UP;
+            let scrollDirection = event.deltaY > 0 ? CoreC.GAME_STATE.SCROLL_DOWN : CoreC.GAME_STATE.SCROLL_UP;
+            if (this.config.INVERT_SCROLL) { scrollDirection *= -1; }
             this.refreshEquippableState(scrollDirection);
         },
 
         /**
-         * Handles keyboard shortcuts for direct item selection (e.g., '1'-'9' for action bar slots, 'Q' for food).
+         * Handles keyboard shortcuts for direct item selection.
          * @param {KeyboardEvent} event - The DOM keyboard event.
          * @returns {void}
          */
         handleKeyPress(event) {
+            if (!this.config.enabled) return;
+            
             const CoreC = this.core.data.constants;
-            const LocalC = this.constants;
 
             if (this.core.isInputFocused()) return;
 
@@ -1605,7 +2159,7 @@ C = Added patches
             if (availableItems.length === 0) return;
 
             const isNumericHotkey = (key) => key >= '1' && key <= '9';
-            const isFoodHotkey = (key) => key === LocalC.HOTKEYS.USE_FOOD;
+            const isFoodHotkey = (key) => key === this.constants.HOTKEYS.USE_FOOD;
             const findFoodItem = (items) => items.find(el => this.core.getItemFromElem(el)?.itemType === CoreC.ITEM_TYPES.FOOD);
 
             let targetElement = null;
@@ -1618,7 +2172,13 @@ C = Added patches
             if (targetElement && this.core.isEquippableItem(targetElement)) {
                 const equippableItems = Array.from(actionBar.children).filter(el => this.core.isEquippableItem(el));
                 const newIndex = equippableItems.findIndex(el => el.id === targetElement.id);
-                if (newIndex !== -1) this.selectItemByIndex(newIndex);
+                if (newIndex !== -1) {
+                    if (this.state.selectedItemIndex === newIndex) {
+                        // Switch to weapon instead.
+                        this.selectItemByIndex(this.state.lastSelectedWeaponIndex);
+                    }
+                    else this.selectItemByIndex(newIndex);
+                }
             }
         },
 
@@ -1628,6 +2188,8 @@ C = Added patches
          * @returns {void}
          */
         handleItemClick(event) {
+            if (!this.config.enabled) return;
+            
             if (this.core.isInputFocused()) return;
             const CoreC = this.core.data.constants;
             const clickedElement = event.target.closest(CoreC.DOM.ACTION_BAR_ITEM_CLASS);
@@ -1645,7 +2207,7 @@ C = Added patches
         /**
          * The master function for refreshing the inventory selection state and UI. It recalculates the list
          * of equippable items, determines the new selection index, sends an equip packet if needed, and updates the UI.
-         * @param {number} [scrollDirection=0] - The direction of scroll: 1 for down, -1 for up, 0 to refresh UI without changing selection.
+         * @param {number} [scrollDirection=0] - The direction of scroll: 1 for down, -1 for up, 0 for no change.
          * @returns {void}
          */
         refreshEquippableState(scrollDirection = this.core.data.constants.GAME_STATE.NO_SCROLL) {
@@ -1689,9 +2251,8 @@ C = Added patches
         },
 
         /**
-         * Updates state when an item is selected by its index in the list of currently equippable items,
-         * then triggers a UI refresh without sending a new packet.
-         * @param {number} newIndex - The index of the item to select in the list of currently equippable items.
+         * Selects an item by its index in the list of equippable items.
+         * @param {number} newIndex - The index of the item to select.
          * @returns {void}
          */
         selectItemByIndex(newIndex) {
@@ -1709,9 +2270,8 @@ C = Added patches
         // --- UI & HELPER FUNCTIONS ---
 
         /**
-         * Updates the action bar UI to highlight the selected item and apply grayscale/brightness filters
-         * to all other items based on their equippable status.
-         * @param {HTMLElement|null} selectedItem - The element to highlight as selected, or null to clear selection.
+         * Updates the action bar UI to highlight the selected item.
+         * @param {HTMLElement|null} selectedItem - The element to highlight as selected.
          * @returns {void}
          */
         updateSelectionUI(selectedItem) {
@@ -1731,35 +2291,37 @@ C = Added patches
 
     /**
      * @module WearablesToolbarMiniMod
-     * @description A minimod that adds a clickable, draggable hotbar for equipping wearables (hats & accessories).
+     * @description A minimod that adds a clickable, draggable hotbar for equipping wearables.
      */
     const WearablesToolbarMiniMod = {
 
         // --- MINI-MOD PROPERTIES ---
 
-        /** @property {object|null} core - A reference to the core module object, set upon registration. */
+        /** @property {object|null} core - A reference to the core module. */
         core: null,
 
         /** @property {string} name - The display name of the minimod. */
         name: "Wearables Toolbar",
-
-        /** @property {object} config - Holds user-configurable settings and CSS for the script. */
+        /** @property {object} config - Holds user-configurable settings. */
         config: {
+            /** @property {boolean} enabled - Master switch for this minimod. */
+            enabled: true,
+            /** @property {string} TOGGLE_KEY - The hotkey to show or hide the toolbar. */
+            TOGGLE_KEY: 'P',
+            /** @property {boolean} START_HIDDEN - If true, the toolbar will be hidden on spawn. */
+            START_HIDDEN: false,
         },
 
         /** @property {object} constants - Constants specific to this minimod. */
         constants: {
-            HOTKEYS: {
-                TOGGLE_WEARABLES: 'P',
-            },
             TEXT: {
                 PIN: 'Pin',
                 UNPIN: 'Unpin',
                 EQUIP_BUTTON_TEXT: 'equip',
             },
             DOM: {
-                ITEM_INFO_HOLDER: 'itemInfoHolder',
                 WEARABLES_TOOLBAR: 'wearablesToolbar',
+                WEARABLES_HOTKEY: 'wearablesHotkey',
                 WEARABLES_HATS: 'wearablesHats',
                 WEARABLES_ACCESSORIES: 'wearablesAccessories',
                 WEARABLES_GRID_CLASS: 'wearables-grid',
@@ -1803,11 +2365,46 @@ C = Added patches
             observers: [],
         },
 
+        /**
+         * Defines the settings for this minimod.
+         * @returns {Array<object>} An array of setting definition objects.
+         */
+        getSettings() {
+            return [
+                {
+                    id: 'wearables_toolbar_enabled',
+                    configKey: 'enabled',
+                    label: 'Enable Wearables Toolbar',
+                    desc: 'Adds a draggable hotbar for accessories.',
+                    type: 'checkbox',
+                    onChange: (value) => this.toggleFeature(value)
+                },
+                {
+                    id: 'wearables_toolbar_toggle_key',
+                    configKey: 'TOGGLE_KEY',
+                    label: 'Toggle Toolbar Key',
+                    desc: 'Press to show or hide the toolbar.',
+                    type: 'keybind',
+                    onChange: (value) => {
+                        const wearableHotkeyLabel = document.getElementById(this.constants.DOM.WEARABLES_HOTKEY);
+                        if (wearableHotkeyLabel) wearableHotkeyLabel.textContent = `(Press '${value}' to toggle)`;
+                    }
+                },
+                {
+                    id: 'wearables_toolbar_start_hidden',
+                    configKey: 'START_HIDDEN',
+                    label: 'Start Hidden',
+                    desc: 'The toolbar will be hidden on spawn.',
+                    type: 'checkbox'
+                }
+            ];
+        },
+
         // --- MINI-MOD LIFECYCLE & HOOKS ---
 
         /**
-         * Returns the CSS rules required for styling the wearables toolbar, its buttons, and adjusting the store menu layout.
-         * @returns {string} The complete CSS string for this minimod.
+         * Returns the CSS rules required for this minimod.
+         * @returns {string} The complete CSS string.
          */
         applyCSS() {
             const CoreC = this.core.data.constants;
@@ -1816,14 +2413,13 @@ C = Added patches
                 #${CoreC.DOM.STORE_MENU} {
                     top: 20px;
                     height: calc(100% - 240px);
-
                     --extended-width: 80px;
 
-                    .${CoreC.DOM.STORE_TAB_CLASS} {
+                    & .${CoreC.DOM.STORE_TAB_CLASS} {
                         padding: 10px calc(10px + (var(--extended-width) / 4));
                     }
 
-                    #${CoreC.DOM.STORE_HOLDER} {
+                    & #${CoreC.DOM.STORE_HOLDER} {
                         height: 100%;
                         width: calc(400px + var(--extended-width));
                     }
@@ -1840,11 +2436,11 @@ C = Added patches
                     padding-right: 5px;
 
                     &:hover {
-                        color: hsl(from var(--text-color) h calc(s * 0.5) calc(l * 0.75));
+                        color: hsl(from var(--text-color) h calc(s * 0.5) calc(l * 0.875));
                     }
                 }
 
-                #${LocalC.DOM.ITEM_INFO_HOLDER} {
+                #${CoreC.DOM.ITEM_INFO_HOLDER} {
                     top: calc(20px + var(--top-offset, 0px));
                 }
 
@@ -1902,37 +2498,54 @@ C = Added patches
                         border-color: lightgreen;
                         box-shadow: 0 0 8px lightgreen;
                     }
-                }
 
-                .${LocalC.DOM.WEARABLE_BUTTON_CLASS}.${LocalC.DOM.WEARABLE_DRAGGING_CLASS} {
-                    opacity: ${LocalC.CSS.DRAGGING_OPACITY};
+                    &.${LocalC.DOM.WEARABLE_DRAGGING_CLASS} {
+                        opacity: ${LocalC.CSS.DRAGGING_OPACITY};
+                    }
                 }
             `
         },
 
         /**
-         * Handles the 'Update Store Items' packet to add new wearables to the toolbar or update the currently equipped item's visual state.
-         * @param {string} packetName - The human-readable name of the incoming packet.
-         * @param {object} packetData - The parsed data object from the incoming packet.
+         * Handles incoming game packets to update wearables.
+         * @param {string} packetName - The human-readable name of the packet.
+         * @param {object} packetData - The parsed data object from the packet.
          * @returns {void}
          */
         onPacket(packetName, packetData) {
+            if (!this.config.enabled) return;
+            
             const CoreC = this.core.data.constants;
-            if (packetName === 'Update Store Items') {
-                const { itemID, itemType, action } = packetData;
-                if (action === CoreC.PACKET_DATA.STORE_ACTIONS.ADD_ITEM) {
-                    this.addWearableButton(itemID, itemType);
-                } else if (action === CoreC.PACKET_DATA.STORE_ACTIONS.UPDATE_EQUIPPED) {
-                    this.updateEquippedWearable(itemID, itemType);
+            switch (packetName) {
+                case 'Update Store Items': {
+                    const { itemID, itemType, action } = packetData;
+
+                    if (action === CoreC.PACKET_DATA.STORE_ACTIONS.ADD_ITEM) {
+                        this.addWearableButton(itemID, itemType);
+                    } else if (action === CoreC.PACKET_DATA.STORE_ACTIONS.UPDATE_EQUIPPED) {
+                        this.updateEquippedWearable(itemID, itemType);
+                    }
+
+                    break;
+                }
+
+                case 'Add Player': {
+                    if (packetData.isYou) {
+                        this.state.isVisible = !this.config.START_HIDDEN;
+                    }
+
+                    break;
                 }
             }
         },
 
         /**
-         * Called when the game is ready. Creates the wearables toolbar UI and sets up observers for dynamic positioning and store menu interactions.
+         * Called when the player has spawned. Creates the toolbar UI.
          * @returns {void}
          */
         onGameReady() {
+            if (!this.config.enabled) return;
+            
             const CoreC = this.core.data.constants;
             const LocalC = this.constants;
             if (!this.core.state.playerHasRespawned && !document.getElementById(LocalC.DOM.WEARABLES_TOOLBAR)) {
@@ -1947,7 +2560,7 @@ C = Added patches
         },
 
         /**
-         * Cleans up all UI elements, observers, and event listeners created by this minimod.
+         * Cleans up all UI elements, observers, and event listeners.
          * @returns {void}
          */
         cleanup() {
@@ -1955,16 +2568,32 @@ C = Added patches
             const LocalC = this.constants;
             document.getElementById(CoreC.DOM.STORE_MENU)?.style.removeProperty('transform');
             document.getElementById(LocalC.DOM.WEARABLES_TOOLBAR)?.remove();
-            document.querySelectorAll(LocalC.DOM.PIN_BUTTON_CLASS).forEach((pinElem) => pinElem.remove());
+            document.querySelectorAll(`.${LocalC.DOM.PIN_BUTTON_CLASS}`).forEach((pinElem) => pinElem.remove());
             document.removeEventListener('keydown', this.state.boundHandlers.handleKeyDown);
             this.state.observers.forEach(obs => obs.disconnect());
             this.state.observers.length = 0;
+        },
+        
+        /**
+         * Immediately shows or hides the feature based on the enabled state.
+         * @param {boolean} isEnabled - The new enabled state.
+         * @returns {void}
+         */
+        toggleFeature(isEnabled) {
+            const toolbar = document.getElementById(this.constants.DOM.WEARABLES_TOOLBAR);
+            if (isEnabled) {
+                // If enabling, but toolbar doesn't exist, try to create it
+                if (!toolbar) this.onGameReady();
+                else toolbar.style.display = this.state.isVisible ? 'block' : 'none';
+            } else {
+                if (toolbar) toolbar.style.display = 'none';
+            }
         },
 
         // --- INITIAL UI SETUP ---
 
         /**
-         * Creates the main HTML structure for the wearables toolbar, including grids for hats and accessories, and appends it to the game UI.
+         * Creates the main HTML structure for the wearables toolbar.
          * @returns {void}
          */
         createWearablesToolbarUI() {
@@ -1974,10 +2603,13 @@ C = Added patches
             const container = document.createElement('div');
             container.id = LocalC.DOM.WEARABLES_TOOLBAR;
             container.innerHTML = `
-                <h1>Wearables Toolbar <span>(Press '${LocalC.HOTKEYS.TOGGLE_WEARABLES}' to toggle)</span></h1>
+                <h1>Wearables Toolbar <span id="${LocalC.DOM.WEARABLES_HOTKEY}">(Press '${this.config.TOGGLE_KEY}' to toggle)</span></h1>
                 <div id="${LocalC.DOM.WEARABLES_HATS}" class="${LocalC.DOM.WEARABLES_GRID_CLASS}"></div>
                 <div id="${LocalC.DOM.WEARABLES_ACCESSORIES}" class="${LocalC.DOM.WEARABLES_GRID_CLASS}"></div>
             `;
+            
+            // Apply start hidden setting
+            container.style.display = this.state.isVisible ? CoreC.CSS.DISPLAY_BLOCK : CoreC.CSS.DISPLAY_NONE;
             
             document.getElementById(CoreC.DOM.GAME_UI).prepend(container);
 
@@ -1988,9 +2620,9 @@ C = Added patches
             accessoriesGrid.addEventListener('dragover', this.handleDragOver.bind(this));
 
             this.state.boundHandlers.handleKeyDown = (e) => {
-                if (this.core.isInputFocused()) return;
+                if (!this.config.enabled || this.core.isInputFocused()) return;
 
-                if (e.key.toUpperCase() === LocalC.HOTKEYS.TOGGLE_WEARABLES) {
+                if (e.key.toUpperCase() === this.config.TOGGLE_KEY) {
                     this.state.isVisible = !this.state.isVisible;
                     container.style.display = this.state.isVisible ? CoreC.CSS.DISPLAY_BLOCK : CoreC.CSS.DISPLAY_NONE;
                 }
@@ -2000,14 +2632,14 @@ C = Added patches
         },
         
         /**
-         * Sets up ResizeObservers to dynamically shift the toolbar's position and the item info box
-         * to prevent them from overlapping.
+         * Sets up observers to dynamically position the toolbar and info box.
          * @returns {void}
          */
         setupDynamicPositioning() {
             const LocalC = this.constants;
+            const CoreC = this.core.data.constants;
             const toolbar = document.getElementById(LocalC.DOM.WEARABLES_TOOLBAR);
-            const infoHolder = document.getElementById(LocalC.DOM.ITEM_INFO_HOLDER);
+            const infoHolder = document.getElementById(CoreC.DOM.ITEM_INFO_HOLDER);
 
             if (!toolbar || !infoHolder) return Logger.warn("Could not find toolbar or info holder for dynamic positioning.");
 
@@ -2040,8 +2672,7 @@ C = Added patches
         },
         
         /**
-         * Sets up MutationObservers to dynamically adjust the store menu layout when the upgrade UI appears,
-         * and to inject "Pin" buttons whenever the store menu's content changes.
+         * Sets up observers to adjust the store menu and inject pin buttons.
          * @returns {void}
          */
         setupStoreMenuObservers() {
@@ -2069,7 +2700,7 @@ C = Added patches
 
             const storeMenuObserver = new MutationObserver((mutationsList) => {
                 for (const mutation of mutationsList) {
-                    if (storeMenu.style.display === CoreC.CSS.DISPLAY_BLOCK && mutation.oldValue.includes(`display: ${CoreC.CSS.DISPLAY_NONE}`)) {
+                    if (storeMenu.style.display === CoreC.CSS.DISPLAY_BLOCK && mutation.oldValue?.includes(`display: ${CoreC.CSS.DISPLAY_NONE}`)) {
                         this.addPinButtons();
                     }
                 }
@@ -2085,8 +2716,8 @@ C = Added patches
         // --- UI MANIPULATION & STATE UPDATES ---
 
         /**
-         * Adds a new button for a specific wearable item to the appropriate grid (hats or accessories) in the toolbar.
-         * @param {number} id - The server-side ID of the wearable item.
+         * Adds a new button for a specific wearable to the toolbar.
+         * @param {number} id - The server-side ID of the wearable.
          * @param {string} type - The type of wearable ('hat' or 'accessory').
          * @returns {void}
          */
@@ -2125,7 +2756,7 @@ C = Added patches
             btn.addEventListener('click', () => {
                 const isCurrentlySelected = btn.classList.contains(LocalC.DOM.WEARABLE_SELECTED_CLASS);
                 const newItemId = isCurrentlySelected ? 0 : id;
-                this.core.sendGamePacket(CoreC.PACKET_TYPES.EQUIP_WEARABLE, [0, newItemId, type === CoreC.PACKET_DATA.WEARABLE_TYPES.HAT ? 0 : 1]);
+                this.core.sendGamePacket(CoreC.PACKET_TYPES.EQUIP_WEARABLE, [newItemId, type === CoreC.PACKET_DATA.WEARABLE_TYPES.HAT ? 0 : 1]);
             });
 
             container.append(btn);
@@ -2133,9 +2764,9 @@ C = Added patches
         },
 
         /**
-         * Updates the visual state of wearable buttons to highlight which item is currently equipped.
-         * @param {number} id - The server-side ID of the newly equipped wearable. A value of 0 means unequip.
-         * @param {string} type - The type of wearable ('hat' or 'accessory').
+         * Updates the visual state of buttons to highlight the equipped wearable.
+         * @param {number} id - The server-side ID of the newly equipped wearable.
+         * @param {string} type - The type of wearable.
          * @returns {void}
          */
         updateEquippedWearable(id, type) {
@@ -2157,7 +2788,7 @@ C = Added patches
         },
 
         /**
-         * Hides or shows wearable buttons on the toolbar based on whether they are in the `pinnedWearables` set.
+         * Hides or shows wearable buttons based on the pinned set.
          * @returns {void}
          */
         refreshToolbarVisibility() {
@@ -2176,7 +2807,7 @@ C = Added patches
         // --- PINNING LOGIC ---
 
         /**
-         * Scans the store menu and adds "Pin" or "Unpin" buttons to all owned wearable items that do not already have one.
+         * Scans the store menu and adds "Pin" buttons to owned wearables.
          * @returns {void}
          */
         addPinButtons() {
@@ -2214,24 +2845,24 @@ C = Added patches
                     pinButton.textContent = this.togglePin(id, type) ? LocalC.TEXT.UNPIN : LocalC.TEXT.PIN;
                     this.refreshToolbarVisibility();
                 });
-                joinBtn.insertAdjacentElement('afterend', pinButton);
+                joinBtn.after(pinButton);
             });
         },
 
         /**
-         * Checks if a wearable is currently pinned to the toolbar.
-         * @param {number} id - The ID of the wearable to check.
-         * @returns {boolean} Returns `true` if the wearable is pinned, `false` otherwise.
+         * Checks if a wearable is currently pinned.
+         * @param {number} id - The ID of the wearable.
+         * @returns {boolean} True if pinned.
          */
         isWearablePinned(id) {
             return this.state.pinnedWearables.has(id);
         },
 
         /**
-         * Toggles the pinned state of a wearable item.
-         * @param {number} id - The ID of the wearable to pin or unpin.
-         * @param {string} type - The type of the wearable ('hat' or 'accessory').
-         * @returns {boolean} Returns `true` if the item is now pinned, `false` if it is now unpinned.
+         * Toggles the pinned state of a wearable.
+         * @param {number} id - The ID of the wearable.
+         * @param {string} type - The type of the wearable.
+         * @returns {boolean} The new pinned state.
          */
         togglePin(id, type) {
             const pinned = this.state.pinnedWearables;
@@ -2248,7 +2879,7 @@ C = Added patches
         // --- EVENT HANDLERS (DRAG & DROP) ---
 
         /**
-         * Handles the dragover event for the wearables grid to allow for live reordering of pinned items.
+         * Handles the dragover event for reordering pinned items.
          * @param {DragEvent} e - The DOM drag event.
          * @returns {void}
          */
@@ -2270,11 +2901,12 @@ C = Added patches
         // --- HELPER FUNCTIONS ---
 
         /**
-         * Finds the sibling element that should come after the dragged item in a grid layout based on cursor position.
+         * Finds the sibling element that should come after the dragged item.
+         * @private
          * @param {HTMLElement} container - The grid container element.
-         * @param {number} x - The cursor's horizontal position (e.g., `event.clientX`).
-         * @param {number} y - The cursor's vertical position (e.g., `event.clientY`).
-         * @returns {HTMLElement|null} The sibling element to insert before, or null to append the dragged item at the end of the container.
+         * @param {number} x - The cursor's horizontal position.
+         * @param {number} y - The cursor's vertical position.
+         * @returns {HTMLElement|null} The sibling element to insert before.
          */
         _getDragAfterElement(container, x, y) {
             const LocalC = this.constants;
@@ -2298,32 +2930,32 @@ C = Added patches
 
     /**
      * @module TypingIndicatorMiniMod
-     * @description Shows a "..." typing indicator in chat while the user is typing, respecting the game's chat rate limit.
+     * @description Shows a "..." typing indicator in chat while the user is typing.
      */
     const TypingIndicatorMiniMod = {
         
         // --- MINI-MOD PROPERTIES ---
 
-        /** @property {object|null} core - A reference to the core module object, set upon registration. */
+        /** @property {object|null} core - A reference to the core module. */
         core: null,
 
         /** @property {string} name - The display name of the minimod. */
         name: "Typing Indicator",
         
-        /**
-         * @property {object} config - Holds user-configurable settings for the script.
-         */
+        /** @property {object} config - Holds user-configurable settings. */
         config: {
-            /** @property {number} INDICATOR_INTERVAL - The time in milliseconds between each animation frame of the indicator. */
-            INDICATOR_INTERVAL: 1000, // ms between each animation frame
-            /** @property {number} RATE_LIMIT_MS - The cooldown period in milliseconds between sending chat messages to avoid server spam kicks. */
+            /** @property {boolean} enabled - Master switch for this minimod. */
+            enabled: true,
+            /** @property {number} INDICATOR_INTERVAL - The time in milliseconds between each animation frame. */
+            INDICATOR_INTERVAL: 1000,
+            /** @property {number} RATE_LIMIT_MS - The cooldown period between sending chat messages. */
             RATE_LIMIT_MS: 550,
-            /** @property {number} START_DELAY - A safe buffer in milliseconds before showing the indicator to avoid flashing on quick messages. */
-            START_DELAY: 1000,       // A safe buffer for the ~500ms chat cooldown
+            /** @property {number} START_DELAY - A safe buffer before showing the indicator. */
+            START_DELAY: 1000,
             /** @property {string[]} ANIMATION_FRAMES - The sequence of strings used for the typing animation. */
             ANIMATION_FRAMES: ['.', '..', '...'],
-            /** @property {number} QUEUE_PROCESSOR_INTERVAL - How often, in milliseconds, to check the message queue for pending messages to send. */
-            QUEUE_PROCESSOR_INTERVAL: 100, // How often to check the message queue
+            /** @property {number} QUEUE_PROCESSOR_INTERVAL - How often to check the message queue for pending messages to send. */
+            QUEUE_PROCESSOR_INTERVAL: 100,
         },
 
         /** @property {object} state - Dynamic state for this minimod. */
@@ -2346,15 +2978,32 @@ C = Added patches
             boundHandlers: {},
         },
 
+        /**
+         * Defines the settings for this minimod.
+         * @returns {Array<object>} An array of setting definition objects.
+         */
+        getSettings() {
+            return [
+                {
+                    id: 'typing_indicator_enabled',
+                    configKey: 'enabled',
+                    label: 'Enable Typing Indicator',
+                    desc: 'Shows "..." in chat while you are typing.',
+                    type: 'checkbox'
+                }
+            ]
+        },
+
         // --- MINI-MOD LIFECYCLE & HOOKS ---
 
         /**
-         * Finds the chat box element, attaches all necessary event listeners (focus, blur, keydown),
-         * and starts the message queue processor.
+         * Adds all necessary event listeners for this minimod.
          * @returns {void}
          */
         addEventListeners() {
-            this.state.chatBoxElement = document.getElementById('chatBox');
+            if (!this.config.enabled) return;
+
+            this.state.chatBoxElement = document.getElementById(this.core.data.constants.DOM.CHAT_BOX);
             if (!this.state.chatBoxElement) return Logger.error("Could not find chatBox element. Mod will not function.");
 
             this.state.boundHandlers.handleFocus = this.handleFocus.bind(this);
@@ -2371,7 +3020,7 @@ C = Added patches
         },
 
         /**
-         * Cleans up all timers and event listeners created by the minimod.
+         * Cleans up all timers and event listeners.
          * @returns {void}
          */
         cleanup() {
@@ -2388,10 +3037,12 @@ C = Added patches
         // --- EVENT HANDLERS ---
 
         /**
-         * Handles the `focus` event on the chat box. Schedules the typing indicator to start after a short delay.
+         * Handles the `focus` event on the chat box.
          * @returns {void}
          */
         handleFocus() {
+            if (!this.config.enabled) return;
+            
             // Instead of starting immediately, set a timeout to begin the animation.
             // This prevents the indicator from flashing for accidental clicks or very fast messages.
             if (this.state.startIndicatorTimeoutId) clearTimeout(this.state.startIndicatorTimeoutId);
@@ -2401,22 +3052,23 @@ C = Added patches
         },
 
         /**
-         * Handles the `blur` event on the chat box. Immediately stops the typing indicator.
+         * Handles the `blur` event on the chat box.
          * @returns {void}
          */
         handleBlur() {
+            if (!this.config.enabled) return;
+            
             clearTimeout(this.state.startIndicatorTimeoutId);
             this.stopTypingIndicator();
         },
 
         /**
-         * Intercepts the 'Enter' key press to queue the user's message instead of sending it immediately,
-         * preventing the default game behavior.
+         * Intercepts the 'Enter' key press to queue the message.
          * @param {KeyboardEvent} event - The DOM keyboard event.
          * @returns {void}
          */
         handleKeyDown(event) {
-            if (event.key === 'Enter') {
+            if (this.config.enabled && event.key === 'Enter') {
                 // Prevent the game from sending the message. We will handle it.
                 event.preventDefault();
                 clearTimeout(this.state.startIndicatorTimeoutId);
@@ -2435,11 +3087,11 @@ C = Added patches
         // --- CORE LOGIC ---
 
         /**
-         * Starts the "..." animation loop by setting up an interval to call `animateIndicator`.
+         * Starts the animation loop.
          * @returns {void}
          */
         startTypingIndicator() {
-            if (this.state.indicatorIntervalId) return; // Already running
+            if (!this.config.enabled || this.state.indicatorIntervalId) return; // Already running
 
             Logger.log("Starting typing indicator.");
             this.state.animationFrameIndex = 0;
@@ -2450,7 +3102,7 @@ C = Added patches
         },
 
         /**
-         * Stops the "..." animation loop, clears the interval, and queues a final empty message to clear the indicator from chat.
+         * Stops the animation loop and cleans up.
          * @returns {void}
          */
         stopTypingIndicator() {
@@ -2468,7 +3120,7 @@ C = Added patches
         },
         
         /**
-         * Queues the next frame of the typing animation (e.g., '.', '..', '...') to be sent to the server.
+         * Queues the next frame of the animation to be sent.
          * @returns {void}
          */
         animateIndicator() {
@@ -2482,7 +3134,7 @@ C = Added patches
         // --- RATE LIMIT & QUEUE MANAGEMENT ---
 
         /**
-         * Starts the interval that periodically processes the message queue.
+         * Starts the interval that processes the message queue.
          * @returns {void}
          */
         startQueueProcessor() {
@@ -2491,8 +3143,8 @@ C = Added patches
         },
 
         /**
-         * Adds a user-typed message to the front of the queue to prioritize it.
-         * @param {string} message - The user's chat message to send.
+         * Adds a user-typed message to the front of the queue.
+         * @param {string} message - The user's chat message.
          * @returns {void}
          */
         queueUserMessage(message) {
@@ -2501,9 +3153,8 @@ C = Added patches
         },
         
         /**
-         * Adds a system message (like the indicator) to the back of the queue. Optimizes by replacing the
-         * last system message if it's also an indicator frame.
-         * @param {string} message - The system message content (e.g., '..').
+         * Adds a system message (like the indicator) to the back of the queue.
+         * @param {string} message - The system message content.
          * @returns {void}
          */
         queueSystemMessage(message) {
@@ -2518,13 +3169,12 @@ C = Added patches
         },
         
         /**
-         * Checks the queue and sends the next message if the chat rate limit has passed.
-         * This is the core of the rate-limiting solution.
+         * Checks the queue and sends the next message if the rate limit has passed.
          * @returns {void}
          */
         processMessageQueue() {
             const CoreC = this.core.data.constants;
-            const canSendMessage = Date.now() - this.state.lastMessageSentTime > this.config.RATE_LIMIT_MS;
+            const canSendMessage = (Date.now() - this.state.lastMessageSentTime) > this.config.RATE_LIMIT_MS;
             
             if (canSendMessage && this.state.messageQueue.length > 0) {
                 const messageToSend = this.state.messageQueue.shift(); // Get the next message
@@ -2547,20 +3197,20 @@ C = Added patches
 
         // --- MINI-MOD PROPERTIES ---
 
-        /** @property {object|null} core - A reference to the core module object, set upon registration. */
+        /** @property {object|null} core - A reference to the core module. */
         core: null,
 
         /** @property {string} name - The display name of the minimod. */
         name: "Assisted Healing",
 
-        /**
-         * @property {object} config - Holds user-configurable settings for the script.
-         */
+        /** @property {object} config - Holds user-configurable settings. */
         config: {
-            /** @property {string} HEAL_KEY - The key to hold down to activate continuous healing. */
-            HEAL_KEY: 'Q',      // The key to hold for healing
-            /** @property {number} HEAL_INTERVAL - How often, in milliseconds, to attempt to send a heal packet while the key is held. */
-            HEAL_INTERVAL: 100, // How often to attempt to heal, in milliseconds
+            /** @property {boolean} enabled - Master switch for this minimod. */
+            enabled: true,
+            /** @property {string} HEAL_KEY - The key to hold down for continuous healing. */
+            HEAL_KEY: 'Q',
+            /** @property {number} HEAL_INTERVAL - How often to attempt to heal while the key is held. */
+            HEAL_INTERVAL: 100,
         },
 
         /** @property {object} state - Dynamic state for this minimod. */
@@ -2574,11 +3224,41 @@ C = Added patches
             /** @property {object} boundHandlers - Stores bound event handler functions for easy addition and removal of listeners. */
             boundHandlers: {}
         },
+        
+        /**
+         * Defines the settings for this minimod.
+         * @returns {Array<object>} An array of setting definition objects.
+         */
+        getSettings() {
+            return [
+                {
+                    id: 'assist_heal_enabled',
+                    configKey: 'enabled',
+                    label: 'Enable Assisted Healing',
+                    desc: 'Hold a key to eat food automatically.',
+                    type: 'checkbox'
+                },
+                {
+                    id: 'assist_heal_key',
+                    configKey: 'HEAL_KEY',
+                    label: 'Heal Key',
+                    desc: 'The key to hold for healing.',
+                    type: 'keybind'
+                },
+                {
+                    id: 'assist_heal_interval',
+                    configKey: 'HEAL_INTERVAL',
+                    label: 'Heal Interval (ms)',
+                    desc: 'How often to try healing when key is held.',
+                    type: 'number', min: 50, max: 500
+                }
+            ];
+        },
 
         // --- MINI-MOD LIFECYCLE & HOOKS ---
 
         /**
-         * Sets up keydown and keyup event listeners to start and stop the healing process.
+         * Adds all necessary event listeners for this minimod.
          * @returns {void}
          */
         addEventListeners() {
@@ -2589,7 +3269,7 @@ C = Added patches
         },
         
         /**
-         * Cleans up by stopping any active healing interval and removing all event listeners.
+         * Cleans up by stopping any active healing and removing event listeners.
          * @returns {void}
          */
         cleanup() {
@@ -2601,12 +3281,12 @@ C = Added patches
         // --- EVENT HANDLERS ---
 
         /**
-         * Handles the `keydown` event to start the healing loop when the configured heal key is pressed.
+         * Handles the `keydown` event to start the healing loop.
          * @param {KeyboardEvent} event - The DOM keyboard event.
          * @returns {void}
          */
         handleKeyDown(event) {
-            if (this.core.isInputFocused() || event.key.toUpperCase() !== this.config.HEAL_KEY) return;
+            if (!this.config.enabled || this.core.isInputFocused() || event.key.toUpperCase() !== this.config.HEAL_KEY) return;
             
             if (!this.state.isHealKeyHeld) {
                 this.state.isHealKeyHeld = true;
@@ -2615,11 +3295,13 @@ C = Added patches
         },
 
         /**
-         * Handles the `keyup` event to stop the healing loop when the heal key is released.
+         * Handles the `keyup` event to stop the healing loop.
          * @param {KeyboardEvent} event - The DOM keyboard event.
          * @returns {void}
          */
         handleKeyUp(event) {
+            if (!this.config.enabled) return;
+            
             if (event.key.toUpperCase() === this.config.HEAL_KEY) {
                 this.state.isHealKeyHeld = false;
                 this.stopHealing();
@@ -2629,7 +3311,7 @@ C = Added patches
         // --- CORE LOGIC ---
 
         /**
-         * Starts the healing interval, which repeatedly calls `attemptHeal`.
+         * Starts the healing interval.
          * @returns {void}
          */
         startHealing() {
@@ -2643,7 +3325,7 @@ C = Added patches
         },
 
         /**
-         * Stops the healing interval and clears the interval ID.
+         * Stops the healing interval.
          * @returns {void}
          */
         stopHealing() {
@@ -2655,7 +3337,7 @@ C = Added patches
         },
 
         /**
-         * Finds the first available and equippable food item on the action bar and sends the necessary packets to use it.
+         * Finds and uses the first available food item.
          * @returns {void}
          */
         attemptHeal() {
@@ -2684,6 +3366,7 @@ C = Added patches
 
     // --- REGISTER MINI-MODS & INITIALIZE ---
 
+    MooMooUtilityMod.registerMod(SettingsManagerMiniMod);
     MooMooUtilityMod.registerMod(ScrollInventoryMiniMod);
     MooMooUtilityMod.registerMod(WearablesToolbarMiniMod);
     MooMooUtilityMod.registerMod(TypingIndicatorMiniMod);
