@@ -3210,7 +3210,7 @@ C = Added patches
             /** @property {string} HEAL_KEY - The key to hold down for continuous healing. */
             HEAL_KEY: 'Q',
             /** @property {number} HEAL_INTERVAL - How often to attempt to heal while the key is held. */
-            HEAL_INTERVAL: 100,
+            HEAL_INTERVAL: 250,
         },
 
         /** @property {object} state - Dynamic state for this minimod. */
