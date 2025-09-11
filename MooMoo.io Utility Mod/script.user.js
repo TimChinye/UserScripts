@@ -3206,7 +3206,7 @@ C = Added patches
         /** @property {object} config - Holds user-configurable settings. */
         config: {
             /** @property {boolean} enabled - Master switch for this minimod. */
-            enabled: true,
+            enabled: false,
             /** @property {string} HEAL_KEY - The key to hold down for continuous healing. */
             HEAL_KEY: 'Q',
             /** @property {number} HEAL_INTERVAL - How often to attempt to heal while the key is held. */
