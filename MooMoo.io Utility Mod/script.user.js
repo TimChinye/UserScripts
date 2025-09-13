@@ -4,7 +4,7 @@
 // @description  Enhances MooMoo.io with mini-mods to level the playing field against cheaters whilst being fair to non-script users.
 // @license      GNU GPLv3 with the condition: no auto-heal or instant kill features may be added to the licensed material.
 // @author       TigerYT
-// @version      0.10.3
+// @version      0.10.4
 // @grant        GM_info
 // @match        *://moomoo.io/*
 // @match        *://dev.moomoo.io/*
@@ -1745,7 +1745,7 @@ C = Added patches
                     box-sizing: border-box;
                     color: #4A4A4A;
                     background-color: #e5e3e3;
-                    width: 5.5ch;
+                    width: calc(8px + 3ch + 20px);
                     border-radius: 4px;
 
                     &[type="number"] {
@@ -2479,6 +2479,12 @@ C = Added patches
             TOGGLE_KEY: 'P',
             /** @property {boolean} START_HIDDEN - If true, the toolbar will be hidden on spawn. */
             START_HIDDEN: false,
+            /** @property {boolean} INSTA_PIN_FREE_HATS - If true, all owned wearables are pinned at the start. */
+            INSTA_PIN_FREE_HATS: false,
+            /** @property {boolean} DRAGGABLE_ENABLED - If true, wearables can be reordered via drag-and-drop. */
+            DRAGGABLE_ENABLED: true,
+            /** @property {boolean} AUTO_PIN_ON_BUY - If true, automatically pins a wearable upon purchase. */
+            AUTO_PIN_ON_BUY: false,
         },
 
         /** @property {object} constants - Constants specific to this minimod. */
@@ -2531,7 +2537,7 @@ C = Added patches
             /** @property {object} boundHandlers - Stores bound event handler functions for easy addition and removal of listeners. */
             boundHandlers: {},
             /** @property {Array<MutationObserver|ResizeObserver>} observers - Stores observers for dynamic UI adjustments and cleanup. */
-            observers: [],
+            observers: []
         },
 
         /**
@@ -2564,6 +2570,28 @@ C = Added patches
                     configKey: 'START_HIDDEN',
                     label: 'Start Hidden',
                     desc: 'The toolbar will be hidden on spawn.',
+                    type: 'checkbox'
+                },
+                {
+                    id: 'wearables_toolbar_insta_pin_free_hats',
+                    configKey: 'INSTA_PIN_FREE_HATS',
+                    label: 'Insta-pin Free Hats',
+                    desc: 'Automatically pins all the free hats, as soon as the game start.',
+                    type: 'checkbox'
+                },
+                {
+                    id: 'wearables_toolbar_draggable',
+                    configKey: 'DRAGGABLE_ENABLED',
+                    label: 'Draggable Wearables',
+                    desc: 'Allow reordering wearables by dragging.',
+                    type: 'checkbox',
+                    onChange: (value) => this.toggleDraggable(value)
+                },
+                {
+                    id: 'wearables_toolbar_auto_pin_on_buy',
+                    configKey: 'AUTO_PIN_ON_BUY',
+                    label: 'Auto-pin on Buy',
+                    desc: 'Automatically pin a wearable when you buy it.',
                     type: 'checkbox'
                 }
             ];
@@ -2691,6 +2719,11 @@ C = Added patches
 
                     if (action === CoreC.PACKET_DATA.STORE_ACTIONS.ADD_ITEM) {
                         this.addWearableButton(itemID, itemType);
+
+                        // If auto-pin is on, pin the new item.
+                        if (this.config.AUTO_PIN_ON_BUY && !this.isWearablePinned(itemID)) {
+                            this.togglePin(itemID, itemType);
+                        }
                     } else if (action === CoreC.PACKET_DATA.STORE_ACTIONS.UPDATE_EQUIPPED) {
                         this.updateEquippedWearable(itemID, itemType);
                     }
@@ -2722,8 +2755,13 @@ C = Added patches
                 const gameUI = document.getElementById(CoreC.DOM.GAME_UI);
                 this.core.waitForVisible(gameUI).then(() => {
                     this.createWearablesToolbarUI();
+
                     this.setupDynamicPositioning();
                     this.setupStoreMenuObservers();
+                        
+                    if (this.config.INSTA_PIN_FREE_HATS) {
+                        this.instaPinFreeHats();
+                    }
                 });
             }
         },
@@ -2903,7 +2941,7 @@ C = Added patches
             const btn = document.createElement('div');
             btn.id = buttonId;
             btn.className = LocalC.DOM.WEARABLE_BUTTON_CLASS;
-            btn.draggable = true;
+            btn.draggable = this.config.DRAGGABLE_ENABLED;
             btn.dataset.wearableId = id;
 
             const imagePath = type === CoreC.PACKET_DATA.WEARABLE_TYPES.HAT ? LocalC.URLS.HAT_IMG_PATH : LocalC.URLS.ACCESSORY_IMG_PATH;
@@ -2976,6 +3014,26 @@ C = Added patches
         // --- PINNING LOGIC ---
 
         /**
+         * Scans the store for all owned wearables and pins them if they aren't already.
+         * This is triggered by the 'Start With All Pinned' setting.
+         * @returns {void}
+         */
+        instaPinFreeHats() {
+            const CoreC = this.core.data.constants;
+
+            const freeHats = [51, 50, 28, 29, 30, 36, 37, 38, 44, 35, 42, 43, 49];
+
+            freeHats.forEach((storeItemId) => {
+                if (!this.isWearablePinned(storeItemId)) {
+                    this.togglePin(storeItemId, CoreC.PACKET_DATA.WEARABLE_TYPES.HAT);
+                }
+            });
+
+            this.refreshToolbarVisibility();
+        },
+
+
+        /**
          * Scans the store menu and adds "Pin" buttons to owned wearables.
          * @returns {void}
          */
@@ -3044,6 +3102,20 @@ C = Added patches
                 return true;
             }
         },
+
+        /**
+         * Toggles the draggable property on all wearable buttons based on the user setting.
+         * @param {boolean} isEnabled - Whether dragging should be enabled.
+         * @returns {void}
+         */
+        toggleDraggable(isEnabled) {
+            const LocalC = this.constants;
+            const allButtons = document.querySelectorAll(`.${LocalC.DOM.WEARABLE_BUTTON_CLASS}`);
+            allButtons.forEach(btn => {
+                btn.draggable = isEnabled;
+            });
+        },
+
 
         // --- EVENT HANDLERS (DRAG & DROP) ---
 
