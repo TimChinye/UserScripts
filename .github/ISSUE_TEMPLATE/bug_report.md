@@ -2,8 +2,8 @@
 name: Bug Report
 about: Create a report to help us improve a userscript
 title: '[Bug] <Insert Brief and Descriptive Title Here>'
-labels: bug
-assignees: TimChinye
+labels: 'bug'
+assignees: 'TimChinye'
 
 ---
 
