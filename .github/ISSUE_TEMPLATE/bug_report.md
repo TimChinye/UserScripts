@@ -5,7 +5,7 @@ title: '[Bug] <Insert Brief and Descriptive Title Here>'
 labels: bug
 assignees: TimChinye
 
---
+---
 
 ### 1. Which userscript (and version) is this feature request for?
 <!-- (Required) Please specify the name and version of the script. Example: "MooMoo.io Utility Mod (v1.0.4)" -->
