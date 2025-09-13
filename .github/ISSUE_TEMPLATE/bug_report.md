@@ -7,7 +7,7 @@ assignees: 'TimChinye'
 
 ---
 
-### 1. Which userscript (and version) is this feature request for?
+### 1. Which userscript (and version) is this bug report for?
 <!-- (Required) Please specify the name and version of the script. Example: "AI Studio Mod (v2.3.2)" -->
 >
 
