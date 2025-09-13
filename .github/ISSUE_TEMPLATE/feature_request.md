@@ -2,8 +2,8 @@
 name: Feature Request
 about: Suggest an idea or new feature for a userscript
 title: '[Feature] <Insert Brief and Descriptive Title Here>'
-labels: enhancement
-assignees: TimChinye
+labels: 'enhancement'
+assignees: 'TimChinye'
 
 ---
 
