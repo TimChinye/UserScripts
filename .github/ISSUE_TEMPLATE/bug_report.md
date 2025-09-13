@@ -1,38 +1,46 @@
 ---
-name: Bug report
-about: Create a report to help us improve
-title: ''
-labels: ''
-assignees: ''
+name: Bug Report
+about: Create a report to help us improve a userscript
+title: '[Bug] <Insert Brief and Descriptive Title Here>'
+labels: bug
+assignees: TimChinye
 
----
+--
 
-**Describe the bug**
-A clear and concise description of what the bug is.
+### 1. Which userscript (and version) is this feature request for?
+<!-- (Required) Please specify the name and version of the script. Example: "MooMoo.io Utility Mod (v1.0.4)" -->
+>
 
-**To Reproduce**
-Steps to reproduce the behavior:
-1. Go to '...'
-2. Click on '....'
-3. Scroll down to '....'
-4. See error
+### 2. Describe the bug
+<!-- (Required) A clear and concise description of what the bug is. -->
+>
 
-**Expected behavior**
-A clear and concise description of what you expected to happen.
+### 3. Steps to Reproduce
+<!-- (Optional) Provide clear, step-by-step instructions to reproduce the unwanted behavior. -->
+> 1. 
+> 2. 
+> 3. 
 
-**Screenshots**
-If applicable, add screenshots to help explain your problem.
+### 4. Expected Behavior
+<!-- (Required) A clear and concise description of what you expected to happen. -->
+>
 
-**Desktop (please complete the following information):**
- - OS: [e.g. iOS]
- - Browser [e.g. chrome, safari]
- - Version [e.g. 22]
+### 5. Screenshots or Videos
+<!-- (Optional - Highly Appreciated) Please share any and all screenshots (including console errors & logs), GIFs, or video links. -->
+>
 
-**Smartphone (please complete the following information):**
- - Device: [e.g. iPhone6]
- - OS: [e.g. iOS8.1]
- - Browser [e.g. stock browser, safari]
- - Version [e.g. 22]
+### 6. Your Environment
+<!-- (Required) Exactly how you run the userscript is very useful to know to fix bugs. -->
 
-**Additional context**
-Add any other context about the problem here.
+- **Browser Name:** <!-- (Required) e.g; Chrome, Firefox, Edge, Safari -->
+  > 
+- **Browser Version:** <!-- (Optional) e.g; 125.0 -->
+  > 
+- **Userscript Manager Name:** <!-- (Optional) e.g; Tampermonkey, Violentmonkey -->
+  > 
+- **Userscript Manager Version:** <!-- (Optional) e.g; 5.1.1 -->
+  > 
+
+### 7. Additional Context
+<!-- (Optional) Dump anything else about the problem here - including things you may not think are related. -->
+> 
