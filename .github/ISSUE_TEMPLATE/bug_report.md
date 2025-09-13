@@ -8,7 +8,7 @@ assignees: 'TimChinye'
 ---
 
 ### 1. Which userscript (and version) is this feature request for?
-<!-- (Required) Please specify the name and version of the script. Example: "MooMoo.io Utility Mod (v1.0.4)" -->
+<!-- (Required) Please specify the name and version of the script. Example: "AI Studio Mod (v2.3.2)" -->
 >
 
 ### 2. Describe the bug
