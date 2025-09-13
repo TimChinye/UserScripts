@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MOOMOO.IO Utility Mod! (Scrollable Inventory, Wearables Hotbar, Typing Indicator, More!)
 // @namespace    https://greasyfork.org/users/137913
-// @description  This mod adds a number of mini-mods to enhance your MooMoo.io experience whilst not being too unfair to non-script users.
+// @description  Enhances MooMoo.io with mini-mods to level the playing field against cheaters whilst being fair to non-script users.
 // @license      GNU GPLv3 with the condition: no auto-heal or instant kill features may be added to the licensed material.
 // @author       TigerYT
 // @version      0.10.3
@@ -102,7 +102,7 @@ C = Added patches
 
             /** @property {number} initTimestamp - The UNIX timestamp (in milliseconds) when the script was initiated. */
             initTimestamp: Date.now(),
-            
+
             /** @property {boolean} codecsReady - Tracks if the msgpack encoder and decoder instances have been successfully captured. */
             codecsReady: false,
 
@@ -213,7 +213,7 @@ C = Added patches
                     MENU_CARD_HOLDER: 'menuCardHolder',
                     SHUTDOWN_DISPLAY: 'shutdownDisplay',
                     LINKS_CONTAINER: 'linksContainer2',
-                    
+
                     // Selectors / Patterns / Classes
                     ACTION_BAR_ITEM_REGEX: /^actionBarItem(\d+)$/,
                     ACTION_BAR_ITEM_CLASS: '.actionBarItem',
@@ -299,6 +299,16 @@ C = Added patches
                 SPAWN_PADS: [
                     { id: 20, server_id: 36, name: "Spawn Pad", limitGroup: 13, limit: 1, cost: { wood: 100, stone: 100 } },
                 ],
+            },
+
+            /** @property {object} _issueTemplates - Holds raw markdown for pre-filling GitHub issue bodies. */
+            _issueTemplates: {}, // MODIFIED: Will be populated by a fetch call.
+
+            // NEW: Added URLs for fetching templates
+            /** @property {object} _issueTemplateURLs - URLs to the raw issue templates on GitHub. */
+            _issueTemplateURLs: {
+                featureRequest: 'https://raw.githubusercontent.com/TimChinye/UserScripts/main/.github/RAW_ISSUE_TEMPLATE/feature_request.md',
+                bugReport: 'https://raw.githubusercontent.com/TimChinye/UserScripts/main/.github/RAW_ISSUE_TEMPLATE/bug_report.md'
             },
 
             /** @property {object} _packetNames - Maps packet ID codes to human-readable names for logging. */
@@ -856,6 +866,30 @@ C = Added patches
         // --- CORE INTERNAL FUNCTIONS ---
 
         /**
+         * A simple parser for the navigator.userAgent string.
+         * @private
+         * @returns {{name: string, version: string}}
+         */
+        _getBrowserInfo() {
+            const ua = navigator.userAgent;
+            let match = ua.match(/(opera|chrome|safari|firefox|msie|trident(?=\/))\/?\s*(\d+)/i) || [];
+            let temp;
+
+            if (/trident/i.test(match[1])) {
+                temp = /\brv[ :]+(\d+)/g.exec(ua) || [];
+                return { name: 'IE', version: temp[1] || '' };
+            }
+            if (match[1] === 'Chrome') {
+                temp = ua.match(/\b(OPR|Edge)\/(\d+)/);
+                if (temp != null) return { name: temp[1].replace('OPR', 'Opera'), version: temp[2] };
+            }
+            match = match[2] ? [match[1], match[2]] : [navigator.appName, navigator.appVersion, '-?'];
+            if ((temp = ua.match(/version\/(\d+)/i)) != null) match.splice(1, 1, temp[1]);
+
+            return { name: match[0], version: match[1] };
+        },
+
+        /**
          * Encodes and sends a packet to the game server.
          * @param {string} type - The one-character packet identifier.
          * @param {any[]} data - The payload data for the packet.
@@ -907,13 +941,13 @@ C = Added patches
                         const { countdown } = packetData;
                         const CoreC = this.data.constants;
                         const shutdownDisplay = document.getElementById(CoreC.DOM.SHUTDOWN_DISPLAY);
-                                        
+
                         if (countdown < 0 || !shutdownDisplay) return;
-                    
+
                         var minutes = Math.floor(countdown / 60);
                         var seconds = countdown % 60;
                         seconds = ("0" + seconds).slice(-2);
-                    
+
                         shutdownDisplay.innerText = "Server restarting in " + minutes + ":" + seconds;
                         shutdownDisplay.hidden = false;
 
@@ -955,6 +989,31 @@ C = Added patches
         },
 
         // --- INITIALIZATION & HOOKING ---
+
+        // NEW: Fetches issue templates from GitHub to ensure they are always up-to-date.
+        async getIssueTemplates() {
+            Logger.log("Fetching issue templates from GitHub...");
+            const urls = this.data._issueTemplateURLs;
+            try {
+                // Fetch both templates concurrently for speed
+                const [featureText, bugText] = await Promise.all([
+                    fetch(urls.featureRequest).then(res => res.ok ? res.text() : ''),
+                    fetch(urls.bugReport).then(res => res.ok ? res.text() : '')
+                ]);
+                this.data._issueTemplates.featureRequest = featureText;
+                this.data._issueTemplates.bugReport = bugText;
+
+                if (featureText && bugText) {
+                    Logger.log("Successfully fetched issue templates.", "color: #4CAF50;");
+                } else {
+                    Logger.warn("One or more issue templates failed to load. Links will fall back to default.");
+                }
+            } catch (error) {
+                Logger.error("Failed to fetch issue templates:", error);
+                // Ensure the templates object is clean on error
+                this.data._issueTemplates = { featureRequest: '', bugReport: '' };
+            }
+        },
 
         /**
          * Collects and injects CSS from the core mod and all registered mini-mods.
@@ -1037,27 +1096,59 @@ C = Added patches
         },
 
         /**
-         * Updates the main menu title screen.
+         * Updates the main menu screen.
          * @returns {void}
          */
-        updateGameTitleScreen() {
+        updateMainMenu() {
             const CoreC = this.data.constants;
 
             this.waitForElementsToLoad(CoreC.DOM.GAME_TITLE).then((titleElem) => {
-                if (!this.state.enabled) return;
+                if (!this.state.enabled || !window.gmInfo) return;
                 titleElem.innerHTML = `MOOMOO<span>.</span>io`;
 
                 const linksContainer = document.getElementById(CoreC.DOM.LINKS_CONTAINER);
 
+                // --- MODIFIED: Dynamic Link Generation ---
+                const gmInfo = window.gmInfo;
+                const featureTemplate = this.data._issueTemplates.featureRequest;
+                const bugTemplate = this.data._issueTemplates.bugReport;
+
+                // 1. Define fallback URLs
+                let featureRequestURL = 'https://github.com/TimChinye/UserScripts/issues/new?template=feature_request.md';
+                let bugReportURL = 'https://github.com/TimChinye/UserScripts/issues/new?template=bug_report.md';
+
+                // 2. If templates were fetched successfully, create pre-filled URLs
+                if (featureTemplate && bugTemplate) {
+                    const scriptNameVersion = `${gmInfo.script.name} (v${gmInfo.script.version})`;
+                    const browserInfo = this._getBrowserInfo();
+                    const environmentDetails = `
+- **Browser Name:** <!-- (Required) e.g; Chrome, Firefox, Edge, Safari -->
+  > ${browserInfo.name}
+- **Browser Version:** <!-- (Optional) e.g; 125.0 -->
+  > ${browserInfo.version}
+- **Userscript Manager Name:** <!-- (Optional) e.g; Tampermonkey, Violentmonkey -->
+  > ${gmInfo.scriptHandler}
+- **Userscript Manager Version:** <!-- (Optional) e.g; 5.1.1 -->
+  > ${gmInfo.version}
+                    `.trim();
+
+                    const featureBody = featureTemplate.replace('{{ SCRIPT_NAME_VERSION }}', scriptNameVersion);
+                    const bugBody = bugTemplate.replace('{{ SCRIPT_NAME_VERSION }}', scriptNameVersion).replace('{{ ENVIRONMENT_DETAILS }}', environmentDetails);
+
+                    featureRequestURL += `&body=${encodeURIComponent(featureBody)}`;
+                    bugReportURL += `&body=${encodeURIComponent(bugBody)}`;
+                }
+
+                // 3. Inject the final HTML with the correct URLs
                 linksContainer.insertAdjacentHTML('beforebegin', `
                     <div id="linksContainer1">
-                        <a href="https://greasyfork.org/en/scripts/463689/feedback" target="_blank" class="menuLink">Share Feedback</a>
-                         | 
-                        <a href="https://github.com/TimChinye/UserScripts/issues/new?template=feature_request.md" target="_blank" class="menuLink">Got an idea?</a>
-                         | 
-                        <a href="https://github.com/TimChinye/UserScripts/issues/new?template=bug_report.md" target="_blank" class="menuLink">Report a Bug</a>
-                         | 
-                        <a href="https://github.com/TimChinye/UserScripts/commits/main/MooMoo.io%20Utility%20Mod/script.user.js" target="_blank" class="menuLink">v${window.gmInfo.script.version}</a>
+                        <a href="https://greasyfork.org/en/scripts/463689/feedback" target="_blank" class="menuLink">Share Thoughts</a>
+                         |
+                        <a href="${featureRequestURL}" target="_blank" class="menuLink">Got an idea?</a>
+                         |
+                        <a href="${bugReportURL}" target="_blank" class="menuLink">Report a Bug</a>
+                         |
+                        <a href="https://github.com/TimChinye/UserScripts/commits/main/MooMoo.io%20Utility%20Mod/script.user.js" target="_blank" class="menuLink">v${gmInfo.script.version}</a>
                     </div>
                 `);
 
@@ -1141,7 +1232,7 @@ C = Added patches
             const menuContainer = document.getElementById(CoreC.DOM.MENU_CONTAINER);
             if (menuContainer && !getLoadingInfoElem()) {
                 menuContainer.insertAdjacentHTML('beforeend', `<div id="${CoreC.DOM.LOADING_INFO}" style="display: none;"><br>${message}<br></div>`);
-                
+
                 const loadingText = document.getElementById(CoreC.DOM.LOADING_TEXT);
                 const syncDisplayCallback = () => {
                     const newDisplayStyle = window.getComputedStyle(loadingText).display;
@@ -1197,7 +1288,7 @@ C = Added patches
                 // User cancelled the reload. Disable the mod and restore the UI - play like normal.
                 Logger.warn("User cancelled reload. Disabling mod.");
                 this.disableMod();
-                
+
                 if (afterGameEnter) {
                     this.setUIState('showGameplay');
                 } else {
@@ -1230,16 +1321,16 @@ C = Added patches
          */
         hookIntoPrototype(propName, onFound) {
             if (!this.state.enabled) return; // Already disabled, no need to proceed.
-            
+
             Logger.log(`Setting up prototype hook for: ${propName}`);
             if (this.state?.codecsReady) return Logger.log("Both codecs found already, cancelling prototype hooks method.", "color: #4CAF50;");
-            
+
             const originalDesc = Object.getOwnPropertyDescriptor(Object.prototype, propName);
             Object.defineProperty(Object.prototype, propName, {
                 set(value) {
                     if (!MooMooUtilityMod.state.enabled) return; // Already disabled, no need to proceed.
                     if (MooMooUtilityMod.state.codecsReady) return Logger.log("Both codecs found already, cancelling prototype hooks method.", "color: #4CAF50;");
-                    
+
                     // Restore the prototype to its original state *before* doing anything else.
                     // This prevents unexpected side effects and race conditions within the hook itself.
                     if (originalDesc) {
@@ -1273,7 +1364,7 @@ C = Added patches
             const onCodecFound = () => {
                 if (this.state.gameEncoder && this.state.gameDecoder) {
                     Logger.log(`Both msgpack codecs found via prototype hooks. ${Date.now() - this.state.initTimestamp}ms`, "color: #4CAF50;");
-                    
+
                     this.state.codecsReady = true;
 
                     this.attemptFinalSetup();
@@ -1311,7 +1402,7 @@ C = Added patches
                 const targetScript = document.querySelector(`script[src*="${SCRIPT_SELECTOR}"]`);
                 if (targetScript) {
                     if (observer) observer.disconnect();
-                    
+
                     Logger.log(`Found game script: ${targetScript.src}`);
                     targetScript.type = 'text/plain'; // Neutralize the original script
 
@@ -1324,7 +1415,7 @@ C = Added patches
                         let modifiedScript = scriptText
                             .replace(ENCODER_REGEX, ENCODER_INJECTION)
                             .replace(DECODER_REGEX, DECODER_INJECTION);
-                            
+
                         if (!modifiedScript.includes("window.gameEncoder") || !modifiedScript.includes("window.gameDecoder")) return Logger.error("Script injection failed! Regex patterns did not match.");
 
                         const newScript = document.createElement('script');
@@ -1336,11 +1427,11 @@ C = Added patches
                             if (this.state?.codecsReady) return Logger.log("Both codecs found already, cancelling prototype hooks method.", "color: #4CAF50;");
 
                             // Make sure this only runs once, in case of any edge cases.
-                            if (document.body.contains(newScript)) return; 
+                            if (document.body.contains(newScript)) return;
 
                             document.head.append(newScript);
                             targetScript.remove();
-                            
+
                             Logger.log("Modified game script injected.", "color: #4CAF50;");
 
                             // Verify capture and finalize setup
@@ -1348,7 +1439,7 @@ C = Added patches
                             setTimeout(() => {
                                 if (window.gameEncoder && window.gameDecoder) {
                                     Logger.log(`Codec interception successful! ${Date.now() - this.state.initTimestamp}ms`, "color: #4CAF50; font-weight: bold;");
-                                    
+
                                     this.state.gameEncoder = window.gameEncoder;
                                     this.state.gameDecoder = window.gameDecoder;
                                     this.state.codecsReady = true;
@@ -1395,7 +1486,7 @@ C = Added patches
                         if (this.state.gameEncoder && this.state.gameDecoder) {
                             this.state.gameSocket = wsInstance;
                             this.state.socketReady = true;
-                            
+
                             Logger.log("Game WebSocket instance captured.");
                             window.WebSocket = originalWebSocket; // Restore immediately
                             this.attemptFinalSetup();
@@ -1419,7 +1510,7 @@ C = Added patches
          */
         onGameReady() {
             if (!this.state.enabled) return; // Already disabled, no need to proceed.
-            
+
             try {
                 // Notify minimods that the game is ready
                 this.miniMods.forEach(mod => {
@@ -1447,14 +1538,14 @@ C = Added patches
             })
 
             // Attempts to find codecs by modifying the game script directly to open a backdoor.
-            this.interceptGameScript(); // Typically succeeds 0.025x slower than mainMenu. 
+            this.interceptGameScript(); // Typically succeeds 0.025x slower than mainMenu.
 
             // Set up hooks to intercept codecs as they enter the global scope.
-            this.initializeHooks(); // Typically succeeds 0.5x slower than mainMenu. 
+            this.initializeHooks(); // Typically succeeds 0.5x slower than mainMenu.
 
             // Set up WebSocket proxy to capture the game's WebSocket instance.
             this.setupWebSocketProxy();
-            
+
             // If codecs aren't found within a reasonable amount of time, assume failure and prompt for reload.
             this.waitForElementsToLoad({ mainMenu: this.data.constants.DOM.MAIN_MENU }).then(({ mainMenu }) => {
                 // We use time until main menu is loaded & visible, to get a good baseline for CPU/Network speeds.
@@ -1474,8 +1565,10 @@ C = Added patches
             // Inject styles immediately, as document.head is available early.
             this.injectCSS();
 
-            // Wait for the body to load before trying to modify its elements.
-            this.updateGameTitleScreen();
+            // Wait for the body to load, and get issue templates before trying to update main menu.
+            this.getIssueTemplates().then(() => {
+                this.updateMainMenu();
+            });
 
             // Initialize all registered minimods
             this.miniMods.forEach(mod => {
@@ -1549,7 +1642,7 @@ C = Added patches
                 KEYBIND_FOCUS_TEXT: '...',
             },
         },
-        
+
         /** @property {object} state - Dynamic state for this minimod. */
         state: {
             /** @property {object} savedSettings - Settings loaded from localStorage. */
@@ -1565,7 +1658,7 @@ C = Added patches
         },
 
         // --- MINI-MOD LIFECYCLE & HOOKS ---
-        
+
         /**
          * Initializes the settings panel creation.
          * @returns {void}
@@ -1584,7 +1677,7 @@ C = Added patches
         applyCSS() {
             const LocalC = this.constants;
             const CoreC = this.core.data.constants;
-            
+
             return `
                 #${LocalC.DOM.LEFT_CARD_HOLDER} {
                     display: inline-block;
@@ -1757,7 +1850,7 @@ C = Added patches
          */
         applySettingsToAllMods() {
             this.state.defaultSettings = {}; // Clear previous defaults
-            
+
             const allMods = this.core.miniMods;
             allMods.forEach(mod => {
                 if (!mod.getSettings) return;
@@ -1788,7 +1881,7 @@ C = Added patches
         },
 
         // --- UI GENERATION ---
-        
+
         /**
          * Rearranges the main menu to create and inject the settings card.
          * @returns {Promise<void>}
@@ -1851,12 +1944,12 @@ C = Added patches
 
             const leftCardHolder = document.getElementById(LocalC.DOM.LEFT_CARD_HOLDER);
             if (leftCardHolder) leftCardHolder.style.removeProperty('display');
-            
+
             const menuCardHolder = document.getElementById(CoreC.DOM.MENU_CARD_HOLDER);
             const promoImgHolder = document.getElementById(CoreC.DOM.AD_HOLDER);
             const wideAdCard = document.getElementById(CoreC.DOM.WIDE_AD_CARD);
             const adCard = document.getElementById(CoreC.DOM.AD_CARD);
-            
+
             if (menuCardHolder.previousElementSibling !== wideAdCard) menuCardHolder.before(wideAdCard);
             if (promoImgHolder.lastElementChild !== adCard) promoImgHolder.append(adCard);
         },
@@ -1871,7 +1964,7 @@ C = Added patches
 
             const leftCardHolder = document.getElementById(LocalC.DOM.LEFT_CARD_HOLDER);
             if (leftCardHolder) leftCardHolder.style.setProperty('display', 'none');
-            
+
             const menuCardHolder = document.getElementById(CoreC.DOM.MENU_CARD_HOLDER);
             const promoImgHolder = document.getElementById(CoreC.DOM.AD_HOLDER);
             const wideAdCard = document.getElementById(CoreC.DOM.WIDE_AD_CARD);
@@ -1908,7 +2001,7 @@ C = Added patches
                     categoryDiv.append(itemDiv);
                 });
             });
-            
+
             const itemDiv = document.createElement('div');
             itemDiv.className = `menuButton ${LocalC.DOM.RESET_ALL_BUTTON_CLASS}`;
             itemDiv.textContent = LocalC.TEXT.RESET_ALL_BUTTON_TEXT;
@@ -1972,13 +2065,13 @@ C = Added patches
                 if (setting.save !== false) {
                     this.saveSetting(setting.id, newValue);
                 }
-                
+
                 // Trigger any immediate callback
                 if (setting.onChange) {
                     setting.onChange(newValue, this.core);
                 }
             };
-            
+
             resetButton.addEventListener('click', () => {
                 const defaultValue = this.state.defaultSettings[setting.id];
                 if (setting.type === 'checkbox') {
@@ -2087,7 +2180,7 @@ C = Added patches
          */
         onPacket(packetName, packetData) {
             if (!this.config.enabled) return;
-            
+
             switch (packetName) {
                 case 'Setup Game': {
                     // Stores the client's player ID upon initial connection.
@@ -2142,7 +2235,7 @@ C = Added patches
          */
         addEventListeners() {
             if (!this.config.enabled) return;
-            
+
             const CoreC = this.core.data.constants;
 
             this.state.boundHandlers.handleInventoryScroll = this.handleInventoryScroll.bind(this);
@@ -2174,7 +2267,7 @@ C = Added patches
          */
         onGameReady() {
             if (!this.config.enabled) return;
-            
+
             const CoreC = this.core.data.constants;
 
             // Wait for Game UI to load before proceeding
@@ -2203,7 +2296,7 @@ C = Added patches
          */
         handleInventoryScroll(event) {
             if (!this.config.enabled) return;
-            
+
             const CoreC = this.core.data.constants;
             if (this.core.isInputFocused() || !this.core.state.gameSocket || this.core.state.gameSocket.readyState !== CoreC.GAME_STATE.WEBSOCKET_STATE_OPEN) return;
 
@@ -2222,7 +2315,7 @@ C = Added patches
          */
         handleKeyPress(event) {
             if (!this.config.enabled) return;
-            
+
             const CoreC = this.core.data.constants;
 
             if (this.core.isInputFocused()) return;
@@ -2265,7 +2358,7 @@ C = Added patches
          */
         handleItemClick(event) {
             if (!this.config.enabled) return;
-            
+
             if (this.core.isInputFocused()) return;
             const CoreC = this.core.data.constants;
             const clickedElement = event.target.closest(CoreC.DOM.ACTION_BAR_ITEM_CLASS);
@@ -2590,7 +2683,7 @@ C = Added patches
          */
         onPacket(packetName, packetData) {
             if (!this.config.enabled) return;
-            
+
             const CoreC = this.core.data.constants;
             switch (packetName) {
                 case 'Update Store Items': {
@@ -2621,7 +2714,7 @@ C = Added patches
          */
         onGameReady() {
             if (!this.config.enabled) return;
-            
+
             const CoreC = this.core.data.constants;
             const LocalC = this.constants;
             if (!this.core.state.playerHasRespawned && !document.getElementById(LocalC.DOM.WEARABLES_TOOLBAR)) {
@@ -2649,7 +2742,7 @@ C = Added patches
             this.state.observers.forEach(obs => obs.disconnect());
             this.state.observers.length = 0;
         },
-        
+
         /**
          * Immediately shows or hides the feature based on the enabled state.
          * @param {boolean} isEnabled - The new enabled state.
@@ -2683,10 +2776,10 @@ C = Added patches
                 <div id="${LocalC.DOM.WEARABLES_HATS}" class="${LocalC.DOM.WEARABLES_GRID_CLASS}"></div>
                 <div id="${LocalC.DOM.WEARABLES_ACCESSORIES}" class="${LocalC.DOM.WEARABLES_GRID_CLASS}"></div>
             `;
-            
+
             // Apply start hidden setting
             container.style.display = this.state.isVisible ? CoreC.CSS.DISPLAY_BLOCK : CoreC.CSS.DISPLAY_NONE;
-            
+
             document.getElementById(CoreC.DOM.GAME_UI).prepend(container);
 
             const hatsGrid = container.querySelector(`#${LocalC.DOM.WEARABLES_HATS}`);
@@ -2706,7 +2799,7 @@ C = Added patches
 
             document.addEventListener('keydown', this.state.boundHandlers.handleKeyDown);
         },
-        
+
         /**
          * Sets up observers to dynamically position the toolbar and info box.
          * @returns {void}
@@ -2746,7 +2839,7 @@ C = Added patches
             // Run once at the start to set the initial position.
             updatePosition();
         },
-        
+
         /**
          * Sets up observers to adjust the store menu and inject pin buttons.
          * @returns {void}
@@ -2763,7 +2856,7 @@ C = Added patches
             const initialCheck = () => {
                 const upgradeHolderVisible = upgradeHolder.style.display === CoreC.CSS.DISPLAY_BLOCK;
                 const upgradeCounterVisible = upgradeCounter.style.display === CoreC.CSS.DISPLAY_BLOCK;
-                
+
                 const isExpanded = upgradeHolderVisible && upgradeCounterVisible;
                 storeMenu.classList.toggle(CoreC.DOM.STORE_MENU_EXPANDED_CLASS, isExpanded);
             };
@@ -2788,7 +2881,7 @@ C = Added patches
             storeHolderObserver.observe(document.getElementById(CoreC.DOM.STORE_HOLDER), { childList: true });
             this.state.observers.push(storeHolderObserver);
         },
-        
+
         // --- UI MANIPULATION & STATE UPDATES ---
 
         /**
@@ -2857,7 +2950,7 @@ C = Added patches
 
             if (id > 0) {
                 const buttonId = `${LocalC.DOM.WEARABLE_BUTTON_ID_PREFIX}${type}-${id}`;
-                
+
                 const newSelectedBtn = document.getElementById(buttonId);
                 if (newSelectedBtn) newSelectedBtn.classList.add(LocalC.DOM.WEARABLE_SELECTED_CLASS);
             }
@@ -2870,7 +2963,7 @@ C = Added patches
         refreshToolbarVisibility() {
             const LocalC = this.constants;
             const CoreC = this.core.data.constants;
-            
+
             const allButtons = document.querySelectorAll(`.${LocalC.DOM.WEARABLE_BUTTON_CLASS}`);
             allButtons.forEach(btn => {
                 const buttonId = parseInt(btn.dataset.wearableId);
@@ -2879,7 +2972,7 @@ C = Added patches
                 }
             });
         },
-        
+
         // --- PINNING LOGIC ---
 
         /**
@@ -2889,14 +2982,14 @@ C = Added patches
         addPinButtons() {
             const CoreC = this.core.data.constants;
             const LocalC = this.constants;
-            
+
             const storeHolder = document.getElementById(CoreC.DOM.STORE_HOLDER);
             Array.from(storeHolder.children).forEach((storeItem) => {
                 const wearableIcon = storeItem.querySelector('img');
                 const joinBtn = storeItem.querySelector('.' + LocalC.DOM.JOIN_ALLIANCE_BUTTON_CLASS);
                 const hasPinButton = storeItem.querySelector(`.${LocalC.DOM.PIN_BUTTON_CLASS}`);
                 const isNotEquipButton = !joinBtn || !joinBtn.textContent.toLowerCase().includes(LocalC.TEXT.EQUIP_BUTTON_TEXT);
-                
+
                 // Check if eligible for a new pin button.
                 if (!wearableIcon || hasPinButton || isNotEquipButton) return;
                 let id, type;
@@ -2967,7 +3060,7 @@ C = Added patches
 
             // Determine where the item SHOULD be placed.
             const afterElement = this._getDragAfterElement(grid, e.clientX, e.clientY);
-            
+
             // Optimization: Prevent DOM updates if position hasn't changed to avoid jitter.
             if (currentlyDragged.nextSibling === afterElement) return;
 
@@ -2999,7 +3092,7 @@ C = Added patches
                     return sibling;
                 }
             }
-            
+
             return null; // If after all other elements
         },
     };
@@ -3009,7 +3102,7 @@ C = Added patches
      * @description Shows a "..." typing indicator in chat while the user is typing.
      */
     const TypingIndicatorMiniMod = {
-        
+
         // --- MINI-MOD PROPERTIES ---
 
         /** @property {object|null} core - A reference to the core module. */
@@ -3017,7 +3110,7 @@ C = Added patches
 
         /** @property {string} name - The display name of the minimod. */
         name: "Typing Indicator",
-        
+
         /** @property {object} config - Holds user-configurable settings. */
         config: {
             /** @property {boolean} enabled - Master switch for this minimod. */
@@ -3089,7 +3182,7 @@ C = Added patches
             this.state.chatBoxElement.addEventListener('focus', this.state.boundHandlers.handleFocus);
             this.state.chatBoxElement.addEventListener('blur', this.state.boundHandlers.handleBlur);
             this.state.chatBoxElement.addEventListener('keydown', this.state.boundHandlers.handleKeyDown);
-            
+
             // Start the queue processor, which will run continuously to send queued messages.
             this.startQueueProcessor();
             Logger.log("Typing indicator event listeners attached and queue processor started.");
@@ -3118,7 +3211,7 @@ C = Added patches
          */
         handleFocus() {
             if (!this.config.enabled) return;
-            
+
             // Instead of starting immediately, set a timeout to begin the animation.
             // This prevents the indicator from flashing for accidental clicks or very fast messages.
             if (this.state.startIndicatorTimeoutId) clearTimeout(this.state.startIndicatorTimeoutId);
@@ -3133,7 +3226,7 @@ C = Added patches
          */
         handleBlur() {
             if (!this.config.enabled) return;
-            
+
             clearTimeout(this.state.startIndicatorTimeoutId);
             this.stopTypingIndicator();
         },
@@ -3159,7 +3252,7 @@ C = Added patches
                 this.stopTypingIndicator();
             }
         },
-        
+
         // --- CORE LOGIC ---
 
         /**
@@ -3171,7 +3264,7 @@ C = Added patches
 
             Logger.log("Starting typing indicator.");
             this.state.animationFrameIndex = 0;
-            
+
             // Run once immediately, then start the interval
             this.animateIndicator();
             this.state.indicatorIntervalId = setInterval(this.animateIndicator.bind(this), this.config.INDICATOR_INTERVAL);
@@ -3194,7 +3287,7 @@ C = Added patches
             // Queue one final, empty message to clear the indicator that might be visible in chat.
             this.queueSystemMessage('');
         },
-        
+
         /**
          * Queues the next frame of the animation to be sent.
          * @returns {void}
@@ -3202,7 +3295,7 @@ C = Added patches
         animateIndicator() {
             const frame = this.config.ANIMATION_FRAMES[this.state.animationFrameIndex];
             this.queueSystemMessage(frame);
-            
+
             // Cycle to the next frame
             this.state.animationFrameIndex = (this.state.animationFrameIndex + 1) % this.config.ANIMATION_FRAMES.length;
         },
@@ -3227,7 +3320,7 @@ C = Added patches
             Logger.log(`Queueing user message: "${message}"`);
             this.state.messageQueue.unshift({ type: 'user', content: message });
         },
-        
+
         /**
          * Adds a system message (like the indicator) to the back of the queue.
          * @param {string} message - The system message content.
@@ -3243,7 +3336,7 @@ C = Added patches
                 this.state.messageQueue.push({ type: 'system', content: message });
             }
         },
-        
+
         /**
          * Checks the queue and sends the next message if the rate limit has passed.
          * @returns {void}
@@ -3251,13 +3344,13 @@ C = Added patches
         processMessageQueue() {
             const CoreC = this.core.data.constants;
             const canSendMessage = (Date.now() - this.state.lastMessageSentTime) > this.config.RATE_LIMIT_MS;
-            
+
             if (canSendMessage && this.state.messageQueue.length > 0) {
                 const messageToSend = this.state.messageQueue.shift(); // Get the next message
-                
+
                 this.core.sendGamePacket(CoreC.PACKET_TYPES.CHAT, [messageToSend.content]);
                 this.state.lastMessageSentTime = Date.now();
-                
+
                 if (messageToSend.type === 'user') {
                     Logger.log(`Sent queued user message: "${messageToSend.content}"`);
                 }
@@ -3300,7 +3393,7 @@ C = Added patches
             /** @property {object} boundHandlers - Stores bound event handler functions for easy addition and removal of listeners. */
             boundHandlers: {}
         },
-        
+
         /**
          * Defines the settings for this minimod.
          * @returns {Array<object>} An array of setting definition objects.
@@ -3343,7 +3436,7 @@ C = Added patches
             document.addEventListener('keydown', this.state.boundHandlers.handleKeyDown);
             document.addEventListener('keyup', this.state.boundHandlers.handleKeyUp);
         },
-        
+
         /**
          * Cleans up by stopping any active healing and removing event listeners.
          * @returns {void}
@@ -3363,7 +3456,7 @@ C = Added patches
          */
         handleKeyDown(event) {
             if (!this.config.enabled || this.core.isInputFocused() || event.key.toUpperCase() !== this.config.HEAL_KEY) return;
-            
+
             if (!this.state.isHealKeyHeld) {
                 this.state.isHealKeyHeld = true;
                 this.startHealing();
@@ -3377,7 +3470,7 @@ C = Added patches
          */
         handleKeyUp(event) {
             if (!this.config.enabled) return;
-            
+
             if (event.key.toUpperCase() === this.config.HEAL_KEY) {
                 this.state.isHealKeyHeld = false;
                 this.stopHealing();
@@ -3394,7 +3487,7 @@ C = Added patches
             if (this.state.healIntervalId) return; // Already healing
 
             Logger.log("Starting Assisted Heal.", "color: #00e676;");
-            
+
             // Immediately try to heal once, then start the interval
             this.attemptHeal();
             this.state.healIntervalId = setInterval(this.attemptHeal.bind(this), this.config.HEAL_INTERVAL);
