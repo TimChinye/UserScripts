@@ -5,7 +5,7 @@
 // @license      GNU GPLv3 with the condition: no auto-heal or instant kill features may be added to the licensed material.
 // @author       TigerYT
 // @version      0.10.3
-// @grant        none
+// @grant        GM_info
 // @match        *://moomoo.io/*
 // @match        *://dev.moomoo.io/*
 // @match        *://sandbox.moomoo.io/*
@@ -22,6 +22,27 @@ C = Added patches
 
 (function() {
     'use strict';
+
+    /**
+     * Asynchronously retrieves the userscript's metadata object.
+     * This is the recommended, universally compatible method.
+     *
+     * @returns {Promise<object>} A Promise that resolves with the script info object.
+     */
+    const getGMInfo = async () => {
+        // Modern API (Greasemonkey 4+)
+        if (typeof GM !== 'undefined' && typeof GM.info === 'function') {
+            return await GM.info;
+        }
+
+        // Legacy API (Tampermonkey, Violentmonkey, etc.)
+        if (typeof GM_info !== 'undefined') {
+            return GM_info;
+        }
+
+        // If neither is found, reject the promise
+        throw new Error("getGMInfoAsync() Error: Userscript manager info object not found. Make sure you have '@grant GM_info' in your script's header.");
+    }
 
     /**
      * @module Logger
@@ -188,17 +209,18 @@ C = Added patches
                     AD_HOLDER: 'promoImgHolder',
                     WIDE_AD_CARD: 'wideAdCard',
                     AD_CARD: 'adCard',
-                    LEFT_CARD_HOLDER: 'leftCardHolder',
                     RIGHT_CARD_HOLDER: 'rightCardHolder',
                     MENU_CARD_HOLDER: 'menuCardHolder',
-                    MENU_CARD: 'menuCard',
                     SHUTDOWN_DISPLAY: 'shutdownDisplay',
-
+                    LINKS_CONTAINER: 'linksContainer2',
+                    
                     // Selectors / Patterns / Classes
                     ACTION_BAR_ITEM_REGEX: /^actionBarItem(\d+)$/,
                     ACTION_BAR_ITEM_CLASS: '.actionBarItem',
                     STORE_MENU_EXPANDED_CLASS: 'expanded',
+                    MENU_CARD_CLASS: 'menuCard',
                     STORE_TAB_CLASS: 'storeTab',
+                    MENU_LINK_CLASS: 'menuLink',
                 },
                 CSS: {
                     DISPLAY_NONE: 'none',
@@ -991,21 +1013,25 @@ C = Added patches
                     font-size: 22.5px;
                 }
 
-                #${CoreC.DOM.LEFT_CARD_HOLDER} {
-                    display: inline-block;
-                    vertical-align: top;
-                }
-
                 #${CoreC.DOM.AD_HOLDER} {
                     display: block;
 
-                    & > .${CoreC.DOM.MENU_CARD} {
+                    & > .${CoreC.DOM.MENU_CARD_CLASS} {
                         margin: 0;
                     }
                 }
 
-                :is(#${CoreC.DOM.LEFT_CARD_HOLDER}, #${CoreC.DOM.RIGHT_CARD_HOLDER}) > .${CoreC.DOM.MENU_CARD} {
-                    min-height: 250px;
+                button.${CoreC.DOM.MENU_LINK_CLASS} {
+                    color: #a56dc8;
+                    text-decoration: none;
+                    background: none;
+                    border: none;
+                    padding: 0;
+                    cursor: pointer;
+                    
+                    &:hover {
+                        color: #795094;
+                    }
                 }
             `;
         },
@@ -1020,6 +1046,22 @@ C = Added patches
             this.waitForElementsToLoad(CoreC.DOM.GAME_TITLE).then((titleElem) => {
                 if (!this.state.enabled) return;
                 titleElem.innerHTML = `MOOMOO<span>.</span>io`;
+
+                const linksContainer = document.getElementById(CoreC.DOM.LINKS_CONTAINER);
+
+                linksContainer.insertAdjacentHTML('beforebegin', `
+                    <div id="linksContainer1">
+                        <a href="https://greasyfork.org/en/scripts/463689/feedback" target="_blank" class="menuLink">Share Feedback</a>
+                         | 
+                        <a href="https://github.com/TimChinye/UserScripts/issues/new?template=feature_request.md" target="_blank" class="menuLink">Got an idea?</a>
+                         | 
+                        <a href="https://github.com/TimChinye/UserScripts/issues/new?template=bug_report.md" target="_blank" class="menuLink">Report a Bug</a>
+                         | 
+                        <a href="https://github.com/TimChinye/UserScripts/commits/main/MooMoo.io%20Utility%20Mod/script.user.js" target="_blank" class="menuLink">v${window.gmInfo.script.version}</a>
+                    </div>
+                `);
+
+                linksContainer.firstElementChild.insertAdjacentHTML('afterend', ' | <a href="https://frvr.com/browse" target="_blank" class="menuLink">Other Games</a>');
             });
         },
 
@@ -1398,8 +1440,11 @@ C = Added patches
         init() {
             // Exposes the logger to the global window object for debugging purposes.
             if (this.config.DEBUG_MODE) window.Logger = Logger;
-            
-            Logger.log("--- MOOMOO.IO Utility Mod Initializing ---", "color: #ffb700; font-weight: bold;");
+
+            getGMInfo().then((gmInfo) => {
+                Logger.log(`--- MOOMOO.IO Utility Mod (v${gmInfo.script.version}) Initializing ---`, "color: #ffb700; font-weight: bold;");
+                window.gmInfo = gmInfo;
+            })
 
             // Attempts to find codecs by modifying the game script directly to open a backdoor.
             this.interceptGameScript(); // Typically succeeds 0.025x slower than mainMenu. 
@@ -1475,13 +1520,18 @@ C = Added patches
         core: null,
 
         /** @property {string} name - The display name of the minimod. */
-        name: "Core Settings",
+        name: "Settings Manager",
 
         /** @property {object} constants - Constants specific to this minimod. */
         constants: {
             LOCALSTORAGE_KEY: 'MooMooUtilMod_Settings',
             DOM: {
                 MOD_CARD: 'modCard',
+                LEFT_CARD_HOLDER: 'leftCardHolder',
+                SETTINGS_LINK: 'settingsLink',
+                CAPTCHA_INPUT: 'altcha',
+                OTHER_INPUTS: 'otherInputs',
+                SETTINGS_ICON: 'settingsIcon',
 
                 SETTINGS_CATEGORY_CLASS: 'settings-category',
                 SETTING_ITEM_CLASS: 'setting-item',
@@ -1521,9 +1571,9 @@ C = Added patches
          * @returns {void}
          */
         init() {
+            this.loadSettings();
             this.createAndInjectSettingsCard();
 
-            this.loadSettings();
             this.applySettingsToAllMods();
         },
 
@@ -1533,15 +1583,26 @@ C = Added patches
          */
         applyCSS() {
             const LocalC = this.constants;
+            const CoreC = this.core.data.constants;
+            
             return `
+                #${LocalC.DOM.LEFT_CARD_HOLDER} {
+                    display: inline-block;
+                    vertical-align: top;
+                }
+
+                :is(#${LocalC.DOM.LEFT_CARD_HOLDER}, #${CoreC.DOM.RIGHT_CARD_HOLDER}) > .${CoreC.DOM.MENU_CARD_CLASS} {
+                    min-height: 250px;
+                }
+
                 #${LocalC.DOM.MOD_CARD} {
                     max-height: 250px;
                     overflow-y: auto;
                     -webkit-overflow-scrolling: touch;
                 }
 
-                #${LocalC.DOM.MOD_CARD} .menuHeader {
-                    margin-top: 10px;
+                #${LocalC.DOM.MOD_CARD} > .menuHeader {
+                    margin-bottom: 15px;    
                 }
 
                 #${LocalC.DOM.MOD_CARD} .${LocalC.DOM.SETTINGS_CATEGORY_CLASS} {
@@ -1631,6 +1692,33 @@ C = Added patches
                         background-color: #ea6b64;
                     }
                 }
+
+                #${LocalC.DOM.OTHER_INPUTS} {
+                    height: 100%;
+                    display: flex;
+                    align-items: center;
+                    gap: 9px;
+                    
+                    > #${LocalC.DOM.SETTINGS_ICON} {
+                        display: block;
+                        height: 44px;
+                        aspect-ratio: 1 / 1;
+                        background: url('https://raw.githubusercontent.com/TimChinye/UserScripts/c76a1b7552434f093774949cfcbf4f57c37b6fdd/MooMoo.io%20Utility%20Mod/settings-icon.svg') center / 100% no-repeat;
+                        background-clip: border-box;
+                        opacity: 0.5;
+                        cursor: pointer;
+                        border: 4.5px solid transparent;
+                        
+                        &:hover {
+                            filter: opacity(0.75);
+                        }
+
+                        & ~ #altcha {
+                            flex: 1;
+                            order: -1;
+                        }
+                    }
+                }
             `;
         },
 
@@ -1644,6 +1732,7 @@ C = Added patches
             try {
                 const saved = localStorage.getItem(this.constants.LOCALSTORAGE_KEY);
                 this.state.savedSettings = saved ? JSON.parse(saved) : {};
+
                 Logger.log("Settings loaded from localStorage.", "color: lightblue;");
             } catch (e) {
                 Logger.error("Failed to load settings from localStorage.", e);
@@ -1708,27 +1797,23 @@ C = Added patches
             const CoreC = this.core.data.constants;
             const LocalC = this.constants;
 
-            return this.core.waitForElementsToLoad({
-                adHolder: CoreC.DOM.AD_HOLDER,
-                menuCardHolder: CoreC.DOM.MENU_CARD_HOLDER
-            }).then(({ adHolder, menuCardHolder }) => {
-                if (!this.config.isPanelVisible) return; // Check if the settings mod itself is enabled
+            const updatePanelVisibility = () => {
+                if (this.config.isPanelVisible) this.showSettingsCard();
+                else this.removeSettingsCard();
+            }
 
-                const wideAdCard = menuCardHolder.nextElementSibling;
-                if (wideAdCard) {
-                    menuCardHolder.before(wideAdCard);
-                }
+            return this.core.waitForElementsToLoad(CoreC.DOM.MENU_CARD_HOLDER).then((menuCardHolder) => {
+                const settingLabel = 'settings_panel_visible';
 
-                const adCard = menuCardHolder.firstElementChild;
-                if (adCard) {
-                    adHolder.append(adCard);
-                }
+                // Set panel visibility to it's previous state, using localStorage.
+                const panelVisibility = this.state.savedSettings[settingLabel];
+                if (typeof panelVisibility === 'boolean') this.config.isPanelVisible = panelVisibility;
 
                 const rightCardHolder = menuCardHolder.lastElementChild;
                 if (!rightCardHolder) return; // Safety check
 
                 const leftCardHolder = rightCardHolder.cloneNode(true);
-                leftCardHolder.id = CoreC.DOM.LEFT_CARD_HOLDER;
+                leftCardHolder.id = LocalC.DOM.LEFT_CARD_HOLDER;
 
                 const modCard = leftCardHolder.firstElementChild;
                 modCard.id = LocalC.DOM.MOD_CARD;
@@ -1737,8 +1822,22 @@ C = Added patches
                 menuCardHolder.className = Date.now();
                 menuCardHolder.prepend(leftCardHolder);
 
+                // Now that panel has been injected into the page, toggle visibility.
+                updatePanelVisibility();
+
                 // Now that the card exists, populate it with the settings.
                 this.populateSettingsPanel(modCard);
+
+                const captchaElem = document.getElementById(LocalC.DOM.CAPTCHA_INPUT);
+                captchaElem.insertAdjacentHTML('beforebegin', `<div id="${LocalC.DOM.OTHER_INPUTS}"><button id="${LocalC.DOM.SETTINGS_ICON}"></button></div>`);
+                document.getElementById(LocalC.DOM.OTHER_INPUTS).append(captchaElem);
+                document.getElementById(LocalC.DOM.SETTINGS_ICON).addEventListener('click', () => {
+                    this.config.isPanelVisible = !this.config.isPanelVisible;
+
+                    updatePanelVisibility();
+
+                    this.saveSetting(settingLabel, this.config.isPanelVisible); // Update localStorage.
+                });
             });
         },
 
@@ -1748,8 +1847,9 @@ C = Added patches
          */
         showSettingsCard() {
             const CoreC = this.core.data.constants;
+            const LocalC = this.constants;
 
-            const leftCardHolder = document.getElementById(CoreC.DOM.LEFT_CARD_HOLDER);
+            const leftCardHolder = document.getElementById(LocalC.DOM.LEFT_CARD_HOLDER);
             if (leftCardHolder) leftCardHolder.style.removeProperty('display');
             
             const menuCardHolder = document.getElementById(CoreC.DOM.MENU_CARD_HOLDER);
@@ -1767,8 +1867,9 @@ C = Added patches
          */
         removeSettingsCard() {
             const CoreC = this.core.data.constants;
+            const LocalC = this.constants;
 
-            const leftCardHolder = document.getElementById(CoreC.DOM.LEFT_CARD_HOLDER);
+            const leftCardHolder = document.getElementById(LocalC.DOM.LEFT_CARD_HOLDER);
             if (leftCardHolder) leftCardHolder.style.setProperty('display', 'none');
             
             const menuCardHolder = document.getElementById(CoreC.DOM.MENU_CARD_HOLDER);
@@ -1905,31 +2006,6 @@ C = Added patches
                 });
             }
             return itemDiv;
-        },
-
-        /**
-         * Defines the settings that will appear in the panel for this minimod itself.
-         * @returns {Array<object>} An array of setting definition objects.
-         */
-        getSettings() {
-            return [
-                {
-                    id: 'settings_panel_enabled',
-                    configKey: 'isPanelVisible',
-                    label: 'Show Mod Settings',
-                    desc: 'Hides or shows this settings card.',
-                    type: 'checkbox',
-                    save: false, // This setting is NOT saved to localStorage
-                    onChange: (value) => {
-                        this.config.isPanelVisible = value;
-                        if (value) {
-                            this.showSettingsCard();
-                        } else {
-                            this.removeSettingsCard();
-                        }
-                    }
-                }
-            ];
         },
     };
 
