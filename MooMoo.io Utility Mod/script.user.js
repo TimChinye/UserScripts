@@ -20,6 +20,42 @@ B = Added or made a major change to a feature (a whole mini-mod, or major parts 
 C = Added patches
 */
 
+/*
+
+Mark things on the map
+
+const mapScale = 14400;
+let mapContext = mapDisplay.getContext("2d");
+
+window.drawX = () => {
+    mapContext.fillStyle = "#F98";
+    mapContext.font = "34px Hammersmith One";
+    mapContext.textBaseline = "middle";
+    mapContext.textAlign = "center";
+    mapContext.fillText("F", (3000/mapScale)*mapDisplay.width, (9000/mapScale)*mapDisplay.height);
+    
+    mapContext.fillStyle = "#8D8";
+    mapContext.font = "34px Hammersmith One";
+    mapContext.textBaseline = "middle";
+    mapContext.textAlign = "center";
+    mapContext.fillText("W", (3000/mapScale)*mapDisplay.width, (4000/mapScale)*mapDisplay.height);
+    
+    mapContext.fillStyle = "#CCC";
+    mapContext.font = "34px Hammersmith One";
+    mapContext.textBaseline = "middle";
+    mapContext.textAlign = "center";
+    mapContext.fillText("S", (6600/mapScale)*mapDisplay.width, (8500/mapScale)*mapDisplay.height);
+}
+
+window.updateDo = () => {
+    window.drawX();
+    requestAnimFrame(window.updateDo);
+};
+
+updateDo();
+
+*/
+
 (function() {
     'use strict';
 
