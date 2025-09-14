@@ -4,7 +4,7 @@
 // @description  Enhances MooMoo.io with mini-mods to level the playing field against cheaters whilst being fair to non-script users.
 // @license      GNU GPLv3 with the condition: no auto-heal or instant kill features may be added to the licensed material.
 // @author       TigerYT
-// @version      0.10.5
+// @version      0.11.0
 // @grant        GM_info
 // @match        *://moomoo.io/*
 // @match        *://dev.moomoo.io/*
@@ -135,6 +135,9 @@ C = Added patches
 
             /** @property {Array<MutationObserver|ResizeObserver>} observers - Stores all active observers for easy disconnection and cleanup when the mod is disabled. */
             observers: [],
+
+            /** @property {Array<string>} focusableElementIds - A list of DOM element IDs that should block hotkeys when visible. Minimods can add to this list. */
+            focusableElementIds: [],
         },
 
         /**
@@ -227,6 +230,7 @@ C = Added patches
                 CSS: {
                     DISPLAY_NONE: 'none',
                     DISPLAY_BLOCK: 'block',
+                    OPAQUE: 1,
                 },
                 GAME_STATE: {
                     INITIAL_SELECTED_ITEM_INDEX: 0,
@@ -623,11 +627,31 @@ C = Added patches
          */
         isInputFocused() {
             const CoreC = this.data.constants;
+
             const isVisible = (id) => {
                 const elem = document.getElementById(id);
-                return elem && elem.style.display === CoreC.CSS.DISPLAY_BLOCK;
+                console.log(window.getComputedStyle(elem).opacity);
+                return elem && window.getComputedStyle(elem).display !== CoreC.CSS.DISPLAY_NONE && window.getComputedStyle(elem).opacity == CoreC.CSS.OPAQUE;
             };
-            return isVisible(CoreC.DOM.CHAT_HOLDER) || isVisible(CoreC.DOM.STORE_MENU) || isVisible(CoreC.DOM.ALLIANCE_MENU);
+
+            return this.state.focusableElementIds.some(isVisible);
+        },
+
+        /**
+         * Registers a DOM element ID as a "focusable" element. When this element is visible,
+         * most hotkeys will be disabled to prevent conflicts with typing or UI interaction.
+         * @param {string} elementId - The ID of the DOM element to register.
+         * @returns {void}
+         */
+        registerFocusableElement(elementId) {
+            if (typeof elementId !== 'string' || !elementId) {
+                Logger.error("registerFocusableElement: elementId must be a non-empty string.");
+                return;
+            }
+            if (!this.state.focusableElementIds.includes(elementId)) {
+                this.state.focusableElementIds.push(elementId);
+                Logger.log(`Registered new focusable element: #${elementId}`);
+            }
         },
 
         /**
@@ -1547,12 +1571,14 @@ C = Added patches
 
             // Attempts to find codecs by modifying the game script directly to open a backdoor.
             this.interceptGameScript(); // Typically succeeds 0.025x slower than mainMenu.
-
+            
             // Set up hooks to intercept codecs as they enter the global scope.
             // this.initializeHooks(); // Typically succeeds 0.5x slower than mainMenu.
-
+            
             // Set up WebSocket proxy to capture the game's WebSocket instance.
             this.setupWebSocketProxy();
+            
+            const CoreC = this.data.constants;
 
             // If codecs aren't found within a reasonable amount of time, assume failure and prompt for reload.
             this.waitForElementsToLoad({ mainMenu: this.data.constants.DOM.MAIN_MENU }).then(({ mainMenu }) => {
@@ -1577,6 +1603,8 @@ C = Added patches
             this.getIssueTemplates().then(() => {
                 this.updateMainMenu();
             });
+            
+            this.state.focusableElementIds = [CoreC.DOM.CHAT_HOLDER, CoreC.DOM.STORE_MENU, CoreC.DOM.ALLIANCE_MENU];
 
             // Initialize all registered minimods
             this.miniMods.forEach(mod => {
@@ -2330,8 +2358,6 @@ C = Added patches
 
             const CoreC = this.core.data.constants;
             if (this.core.isInputFocused() || !this.core.state.gameSocket || this.core.state.gameSocket.readyState !== CoreC.GAME_STATE.WEBSOCKET_STATE_OPEN) return;
-
-            event.preventDefault();
 
             // Determine scroll direction and send to refresh selection UI function.
             let scrollDirection = event.deltaY > 0 ? CoreC.GAME_STATE.SCROLL_DOWN : CoreC.GAME_STATE.SCROLL_UP;
@@ -3636,6 +3662,300 @@ C = Added patches
         }
     };
 
+    /**
+     * @module ProximityChatMiniMod
+     * @description Displays nearby player chats in a Minecraft/Roblox-style chatbox,
+     * showing player names, leaderboard ranks, and timestamps.
+     */
+    const ProximityChatMiniMod = {
+        // --- MINI-MOD PROPERTIES ---
+
+        /** @property {object|null} core - A reference to the core module. */
+        core: null,
+
+        /** @property {string} name - The display name of the minimod. */
+        name: "Proximity Chat",
+
+        /** @property {object} config - Holds user-configurable settings. */
+        config: {
+            /** @property {boolean} enabled - Master switch for this minimod. */
+            enabled: true,
+            /** @property {number} maxMessages - The maximum number of messages to keep in the chatbox. */
+            maxMessages: 100
+        },
+
+        /** @property {object} constants - Constants specific to this minimod. */
+        constants: {
+            DOM: {
+                CHATBOX_CONTAINER_ID: 'proximityChatboxContainer',
+                CHATBOX_MESSAGES_ID: 'proximityChatboxMessages',
+                CHAT_MESSAGE_CLASS: 'proximityChatMessage'
+            }
+        },
+
+        /** @property {object} state - Dynamic state for this minimod. */
+        state: {
+            /** @property {Map<number, object>} players - Maps player SID to their data {id, name}. */
+            players: new Map(),
+            /** @property {Map<number, number>} leaderboard - Maps player SID to their rank. */
+            leaderboard: new Map(),
+            /** @property {HTMLElement|null} chatboxContainer - Reference to the main chatbox UI element. */
+            chatboxContainer: null,
+            /** @property {HTMLElement|null} messagesContainer - Reference to the inner element that holds messages. */
+            messagesContainer: null
+        },
+
+        /**
+         * Defines the settings for this minimod.
+         * @returns {Array<object>} An array of setting definition objects.
+         */
+        getSettings() {
+            return [
+                {
+                    id: 'proximity_chat_enabled',
+                    configKey: 'enabled',
+                    label: 'Enable Proximity Chat',
+                    desc: 'Shows nearby chats in a custom chatbox.',
+                    type: 'checkbox',
+                    onChange: (value) => this.toggleFeature(value)
+                },
+                {
+                    id: 'proximity_chat_max_messages',
+                    configKey: 'maxMessages',
+                    label: 'Max Chat Messages',
+                    desc: 'The number of messages to show before old ones disappear.',
+                    type: 'number', min: 10, max: 500
+                }
+            ];
+        },
+
+        // --- MINI-MOD LIFECYCLE & HOOKS ---
+
+        /**
+         * Initializes the minimod by creating the chatbox UI.
+         * @returns {void}
+         */
+        init() {
+            if (!this.config.enabled) return;
+
+            // Wait for the main game UI to be ready before injecting our chatbox
+            this.core.waitForElementsToLoad(this.core.data.constants.DOM.GAME_UI).then(gameUI => {
+                const chatboxContainer = document.createElement('div');
+                chatboxContainer.id = this.constants.DOM.CHATBOX_CONTAINER_ID;
+
+                this.core.registerFocusableElement(chatboxContainer.id);
+
+                const messagesContainer = document.createElement('div');
+                messagesContainer.id = this.constants.DOM.CHATBOX_MESSAGES_ID;
+
+                chatboxContainer.appendChild(messagesContainer);
+                gameUI.appendChild(chatboxContainer);
+
+                this.state.chatboxContainer = chatboxContainer;
+                this.state.messagesContainer = messagesContainer;
+            });
+        },
+        
+        /**
+         * Returns the CSS rules required for styling the chatbox.
+         * @returns {string} The complete CSS string.
+         */
+        applyCSS() {
+            const LocalC = this.constants;
+            return `
+                #${LocalC.DOM.CHATBOX_CONTAINER_ID} {
+                    position: absolute;
+                    bottom: 215px; /* Positioned above the action bar */
+                    left: 20px;
+                    width: 400px;
+                    max-width: 50%;
+                    height: 250px;
+                    opacity: 0.75;
+                    background-color: rgba(0, 0, 0, 0.33333);
+                    border-radius: 4px;
+                    color: white;
+                    font-family: 'Hammersmith One', sans-serif;
+                    font-size: 16px;
+                    display: flex;
+                    flex-direction: column-reverse; /* New messages appear at the bottom */
+                    pointer-events: all;
+                    z-index: 10; /* Ensure it's above most game elements but below menus */
+                    
+                    /* --- KEY CHANGE: Scrolling is now handled by the main container --- */
+                    overflow-y: auto; 
+                    scrollbar-width: thin;
+                    scrollbar-color: rgba(255, 255, 255, 0.3) rgba(0, 0, 0, 0.2);
+                    transition: opacity 1s;
+
+                    &:hover {
+                        opacity: 1;
+                    }
+                }
+
+                #${LocalC.DOM.CHATBOX_CONTAINER_ID}::-webkit-scrollbar {
+                    width: 6px;
+                }
+
+                #${LocalC.DOM.CHATBOX_CONTAINER_ID}::-webkit-scrollbar-track {
+                    background: rgba(0, 0, 0, 0.2);
+                }
+
+                #${LocalC.DOM.CHATBOX_CONTAINER_ID}::-webkit-scrollbar-thumb {
+                    background-color: rgba(255, 255, 255, 0.3);
+                    border-radius: 3px;
+                }
+
+                #${LocalC.DOM.CHATBOX_MESSAGES_ID} {
+                    /* --- KEY CHANGE: Removed flex properties and overflow from the inner container --- */
+                    padding: 8px;
+                    word-wrap: break-word;
+                }
+
+                .${LocalC.DOM.CHAT_MESSAGE_CLASS} {
+                    margin-top: 4px;
+                    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7);
+                    animation: fadeIn 0.3s ease-in-out;
+                }
+                
+                @keyframes fadeIn {
+                    from { opacity: 0; transform: translateY(10px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
+
+                .${LocalC.DOM.CHAT_MESSAGE_CLASS} .timestamp {
+                    color: #AAAAAA;
+                }
+
+                .${LocalC.DOM.CHAT_MESSAGE_CLASS} .player-name {
+                    font-weight: bold;
+                    color: #FFFFFF;
+                }
+
+                .${LocalC.DOM.CHAT_MESSAGE_CLASS} .message-content {
+                    color: #FFFFFF;
+                }
+            `;
+        },
+        
+        /**
+         * Cleans up all UI created by this minimod.
+         * @returns {void}
+         */
+        cleanup() {
+            this.state.chatboxContainer?.remove();
+            this.state.chatboxContainer = null;
+            this.state.messagesContainer = null;
+            this.state.players.clear();
+            this.state.leaderboard.clear();
+        },
+
+        /**
+         * Toggles the feature's visibility.
+         * @param {boolean} isEnabled - The new enabled state.
+         */
+        toggleFeature(isEnabled) {
+            if (this.state.chatboxContainer) {
+                this.state.chatboxContainer.style.display = isEnabled ? 'flex' : 'none';
+            }
+        },
+
+        /**
+         * Handles incoming game packets to update the minimod's state.
+         * @param {string} packetName - The human-readable name of the packet.
+         * @param {object} packetData - The parsed data object from the packet.
+         */
+        onPacket(packetName, packetData) {
+            if (!this.config.enabled) return;
+
+            switch (packetName) {
+                case 'Add Player':
+                    if (packetData.sid) {
+                        this.state.players.set(packetData.sid, { id: packetData.id, name: packetData.name });
+                    }
+                    break;
+
+                case 'Remove Player': {
+                    const idToRemove = packetData.id;
+                    for (const [sid, playerData] of this.state.players.entries()) {
+                        if (playerData.id === idToRemove) {
+                            this.state.players.delete(sid);
+                            break;
+                        }
+                    }
+                    break;
+                }
+
+                case 'Leaderboard Update':
+                    this.state.leaderboard.clear();
+                    packetData.leaderboard.forEach((player, index) => {
+                        this.state.leaderboard.set(player.sid, index + 1);
+                    });
+                    break;
+
+                case 'Receive Chat':
+                    if (!(/^\.+$/.test(packetData.message))) this.addChatMessage(packetData.sid, packetData.message);
+                    break;
+
+                case 'Client Player Death':
+                case 'Setup Game': // Clear on respawn or new game
+                    this.state.players.clear();
+                    this.state.leaderboard.clear();
+                    if (this.state.messagesContainer) {
+                        this.state.messagesContainer.innerHTML = '';
+                    }
+                    break;
+            }
+        },
+        
+        /**
+         * Creates and adds a new chat message to the UI.
+         * @param {number} sid - The sender's session ID.
+         * @param {string} message - The chat message content.
+         */
+        addChatMessage(sid, message) {
+            if (!this.config.enabled || !this.state.messagesContainer) return;
+
+            const playerInfo = this.state.players.get(sid);
+            const rank = this.state.leaderboard.get(sid);
+
+            let playerName = playerInfo ? playerInfo.name : `Player ${sid}`;
+            if (rank) {
+                playerName = `[${rank}] ${playerName}`;
+            }
+
+            const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+            // Create elements safely to prevent HTML injection
+            const msgElement = document.createElement('div');
+            msgElement.className = this.constants.DOM.CHAT_MESSAGE_CLASS;
+
+            const timeSpan = document.createElement('span');
+            timeSpan.className = 'timestamp';
+            timeSpan.textContent = `[${timestamp}] `;
+            
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'player-name';
+            nameSpan.textContent = `${playerName}`;
+            // Style ranked players differently for emphasis
+            if (rank) {
+                nameSpan.style.color = '#FFD700'; // Gold color
+            }
+
+            const contentSpan = document.createElement('span');
+            contentSpan.className = 'message-content';
+            contentSpan.textContent = `: ${message}`;
+
+            msgElement.append(timeSpan, nameSpan, contentSpan);
+            
+            // Add to UI and manage message limit
+            this.state.messagesContainer.appendChild(msgElement);
+
+            if (this.state.messagesContainer.children.length > this.config.maxMessages) {
+                this.state.messagesContainer.removeChild(this.state.messagesContainer.firstChild);
+            }
+        },
+    };
+
     // --- REGISTER MINI-MODS & INITIALIZE ---
 
     MooMooUtilityMod.registerMod(SettingsManagerMiniMod);
@@ -3643,6 +3963,7 @@ C = Added patches
     MooMooUtilityMod.registerMod(WearablesToolbarMiniMod);
     MooMooUtilityMod.registerMod(TypingIndicatorMiniMod);
     MooMooUtilityMod.registerMod(AssistedHealMiniMod);
+    MooMooUtilityMod.registerMod(ProximityChatMiniMod);
 
     MooMooUtilityMod.init();
 })();
