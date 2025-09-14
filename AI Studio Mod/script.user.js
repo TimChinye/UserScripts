@@ -3,7 +3,7 @@
 // @namespace    https://greasyfork.org/users/137913
 // @description  Adds a dynamic TOC with smart scrolling for long sections to the settings panel.
 // @author       TigerYT
-// @version      2.3.3
+// @version      2.3.2
 // @match        *://aistudio.google.com/*
 // @icon         https://www.gstatic.com/aistudio/ai_studio_favicon_2_32x32.png
 // @grant        none
@@ -127,7 +127,7 @@
                         responseName = 'User Input';
                         break;
                     case "Model":
-                        responseName = responseElem.querySelector('.author-label') ? 'Model Output' : 'Model Thinking';
+                        responseName = responseElem.querySelector('.author-label') ? 'Model Thinking' : 'Model Output';
                         break;
                 }
 
