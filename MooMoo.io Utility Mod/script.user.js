@@ -187,6 +187,7 @@ C = Added patches
                 DOM: {
                     // IDs
                     UTILITY_MOD_STYLES: 'utilityModStyles',
+                    UTILITY_MOD_SCRIPTS: 'utilityModScripts',
                     MENU_CONTAINER: 'menuContainer',
                     MAIN_MENU: 'mainMenu',
                     STORE_MENU: 'storeMenu',
@@ -221,6 +222,7 @@ C = Added patches
                     MENU_CARD_CLASS: 'menuCard',
                     STORE_TAB_CLASS: 'storeTab',
                     MENU_LINK_CLASS: 'menuLink',
+                    PASSTHROUGH_CLASS: 'passthrough',
                 },
                 CSS: {
                     DISPLAY_NONE: 'none',
@@ -498,8 +500,8 @@ C = Added patches
 
             // 2. Cleanup core UI, styles, and observers
             const CoreC = this.data.constants;
-            const utilityModStyles = document.getElementById(CoreC.DOM.UTILITY_MOD_STYLES);
-            if (utilityModStyles) utilityModStyles.remove();
+            const style = document.getElementById(CoreC.DOM.UTILITY_MOD_STYLES);
+            if (style) style.remove();
 
             const titleElem = document.getElementById(CoreC.DOM.GAME_TITLE);
             if (titleElem) titleElem.innerHTML = 'MOOMOO.io';
@@ -515,7 +517,6 @@ C = Added patches
                 mainMenu: CoreC.DOM.MAIN_MENU,
                 menuCardHolder: CoreC.DOM.MENU_CARD_HOLDER,
                 loadingText: CoreC.DOM.LOADING_TEXT,
-                gameCanvas: CoreC.DOM.GAME_CANVAS,
                 gameUI: CoreC.DOM.GAME_UI,
                 diedText: CoreC.DOM.DIED_TEXT,
             }).then(elements => {
@@ -1092,6 +1093,14 @@ C = Added patches
                         color: #795094;
                     }
                 }
+
+                #${CoreC.DOM.MAIN_MENU}.${CoreC.DOM.PASSTHROUGH_CLASS} {
+                    pointer-events: none;
+
+                    #${CoreC.DOM.MENU_CONTAINER} ~ div {
+                        pointer-events: auto;
+                    }
+                }
             `;
         },
 
@@ -1167,7 +1176,6 @@ C = Added patches
                 mainMenu: CoreC.DOM.MAIN_MENU,
                 menuCardHolder: CoreC.DOM.MENU_CARD_HOLDER,
                 loadingText: CoreC.DOM.LOADING_TEXT,
-                gameCanvas: CoreC.DOM.GAME_CANVAS,
                 gameUI: CoreC.DOM.GAME_UI,
                 diedText: CoreC.DOM.DIED_TEXT,
             };
@@ -1179,27 +1187,25 @@ C = Added patches
                 this.unlockStyleUpdates("display", domElements);
 
                 // Reset all to a blank slate.
-                document.body.style.backgroundImage = '';
                 domElements.forEach(el => el.style.display = 'none');
+                elementsMap.mainMenu.classList.remove(CoreC.DOM.PASSTHROUGH_CLASS);
 
                 // Show only the elements necessary for each screen
                 switch (state) {
                     case 'showMenu':
                         elementsMap.mainMenu.style.display = 'block';
                         elementsMap.menuCardHolder.style.display = 'block';
-                        elementsMap.gameCanvas.style.display = 'block';
                         break;
 
                     case 'showGameplay':
                         elementsMap.gameUI.style.display = 'block';
                         elementsMap.menuCardHolder.style.display = 'block';
-                        elementsMap.gameCanvas.style.display = 'block';
                         break;
 
                     case 'showError':
                         elementsMap.mainMenu.style.display = 'block';
                         elementsMap.loadingText.style.display = 'block';
-                        document.body.style.backgroundImage = 'url("https://tinyurl.com/MooMooBackground")';
+                        elementsMap.mainMenu.classList.add(CoreC.DOM.PASSTHROUGH_CLASS);
 
                         if (this.state.enabled) {
                             // Disable updating the element display types
@@ -1282,18 +1288,16 @@ C = Added patches
                 await this.waitTillNextFrame();
             }
 
-            if (afterGameEnter || window.confirm("Are you sure you want to reload?")) {
-                window.location.reload();
-            } else {
-                // User cancelled the reload. Disable the mod and restore the UI - play like normal.
-                Logger.warn("User cancelled reload. Disabling mod.");
-                this.disableMod();
+            if (afterGameEnter || window.confirm("Are you sure you want to reload?")) window.location.reload();
 
-                if (afterGameEnter) {
-                    this.setUIState('showGameplay');
-                } else {
-                    this.setUIState('showMenu');
-                }
+            // User cancelled the reload. Disable the mod and restore the UI - play like normal.
+            Logger.warn("User cancelled reload. Disabling mod.");
+            this.disableMod();
+
+            if (afterGameEnter) {
+                this.setUIState('showGameplay');
+            } else {
+                this.setUIState('showMenu');
             }
         },
 
@@ -1345,7 +1349,7 @@ C = Added patches
                     // Check if this is the object we are looking for and trigger the callback.
                     // We check for the function's existence to be more certain.
                     const isFoundCodec = (targetPropName, codecOperation) => propName === targetPropName && typeof codecOperation === 'function';
-                    if (isFoundCodec("initialBufferSize", this.encode) || isFoundCodec("maxExtLength", this.decode)) {
+                    if (isFoundCodec("initialBufferSize", this.encode) || isFoundCodec("maxStrLength", this.decode)) {
                         Logger.log(`Hook successful for "${propName}". Object found.`, "color: #4CAF50;");
                         onFound(this);
                     }
@@ -1372,7 +1376,7 @@ C = Added patches
             };
 
             this.hookIntoPrototype("initialBufferSize", (obj) => { this.state.gameEncoder = obj; onCodecFound(); });
-            this.hookIntoPrototype("maxExtLength", (obj) => { this.state.gameDecoder = obj; onCodecFound(); });
+            this.hookIntoPrototype("maxStrLength", (obj) => { this.state.gameDecoder = obj; onCodecFound(); });
         },
 
         /**
@@ -1384,11 +1388,13 @@ C = Added patches
             if (!this.state.enabled) return; // Already disabled, no need to proceed.
             Logger.log("Attempting to intercept and modify the game script...");
 
+            const CoreC = this.data.constants;
+
             const SCRIPT_SELECTOR = "/assets/index-eb87bff7.js";
             const ENCODER_REGEX = /(this\.initialBufferSize=\w,)/;
-            const ENCODER_INJECTION = `$1 Logger.log("✅ CAPTURED ENCODER!"), window.gameEncoder = this,`;
+            const ENCODER_EXPOSURE = `$1 Logger.log("✅ CAPTURED ENCODER!"), window.gameEncoder = this,`;
             const DECODER_REGEX = /(this\.maxStrLength=\w,)/;
-            const DECODER_INJECTION = `$1 Logger.log("✅ CAPTURED DECODER!"), window.gameDecoder = this,`;
+            const DECODER_EXPOSURE = `$1 Logger.log("✅ CAPTURED DECODER!"), window.gameDecoder = this,`;
 
             /**
              * Attempts to find and modify the game script to expose the codecs.
@@ -1413,12 +1419,14 @@ C = Added patches
                         if (this.state?.codecsReady) return Logger.log("Both codecs found already, cancelling prototype hooks method.", "color: #4CAF50;");
 
                         let modifiedScript = scriptText
-                            .replace(ENCODER_REGEX, ENCODER_INJECTION)
-                            .replace(DECODER_REGEX, DECODER_INJECTION);
+                            .replace(/(customElements\.define\("altcha-widget".*"verify"\],!1\)\);)/, '')
+                            .replace(ENCODER_REGEX, ENCODER_EXPOSURE)
+                            .replace(DECODER_REGEX, DECODER_EXPOSURE);
 
                         if (!modifiedScript.includes("window.gameEncoder") || !modifiedScript.includes("window.gameDecoder")) return Logger.error("Script injection failed! Regex patterns did not match.");
 
                         const newScript = document.createElement('script');
+                        newScript.id = CoreC.DOM.UTILITY_MOD_SCRIPTS;
                         newScript.textContent = modifiedScript;
 
                         // This is the function we want to run once the DOM is ready.
@@ -1541,7 +1549,7 @@ C = Added patches
             this.interceptGameScript(); // Typically succeeds 0.025x slower than mainMenu.
 
             // Set up hooks to intercept codecs as they enter the global scope.
-            this.initializeHooks(); // Typically succeeds 0.5x slower than mainMenu.
+            // this.initializeHooks(); // Typically succeeds 0.5x slower than mainMenu.
 
             // Set up WebSocket proxy to capture the game's WebSocket instance.
             this.setupWebSocketProxy();
@@ -1555,7 +1563,7 @@ C = Added patches
 
                         Logger.error("Hooks failed to find codecs within the time limit.");
                         this.handleHookFailureAndReload();
-                    }, (Date.now() - this.state.initTimestamp) * 2.5); // If no success after 1.5x the mainMenu, assume failure.
+                    }, ((Date.now() - this.state.initTimestamp) + 100) * 2.5); // If no success after 1.5x the mainMenu, assume failure.
                 });
             });
 
@@ -1813,6 +1821,29 @@ C = Added patches
                     }
                 }
             `;
+        },
+        
+        /**
+         * Cleans up all UI created by this minimod.
+         * @returns {void}
+         */
+        cleanup() {
+            const LocalC = this.constants;
+
+            // Restore the original structure
+            this.config.isPanelVisible = false;
+            this.removeSettingsCard();
+
+            // Remove the settings panel card
+            const leftCardHolder = document.getElementById(LocalC.DOM.LEFT_CARD_HOLDER);
+            if (leftCardHolder) leftCardHolder.remove();
+
+            // Unwrap captcha input
+            const captchaElem = document.getElementById(LocalC.DOM.CAPTCHA_INPUT);
+            if (captchaElem) {
+                captchaElem.parentElement.before(captchaElem);
+                captchaElem.parentElement.remove();
+            }
         },
 
         // --- CORE LOGIC ---
