@@ -106,6 +106,9 @@ C = Added patches
             /** @property {boolean} codecsReady - Tracks if the msgpack encoder and decoder instances have been successfully captured. */
             codecsReady: false,
 
+            /** @property {boolean} playerObjectReady - Tracks if the player object instance has been successfully captured. */
+            playerObjectReady: false,
+
             /** @property {boolean} socketReady - Tracks if the game's WebSocket instance has been successfully captured. */
             socketReady: false,
 
@@ -1333,6 +1336,7 @@ C = Added patches
             Object.defineProperty(Object.prototype, propName, {
                 set(value) {
                     if (!MooMooUtilityMod.state.enabled) return; // Already disabled, no need to proceed.
+                    if (propName == "tmpScore" && !MooMooUtilityMod.state.playerObjectReady) return onFound(this);
                     if (MooMooUtilityMod.state.codecsReady) return Logger.log("Both codecs found already, cancelling prototype hooks method.", "color: #4CAF50;");
 
                     // Restore the prototype to its original state *before* doing anything else.
@@ -1343,7 +1347,7 @@ C = Added patches
                         delete Object.prototype[propName];
                     }
 
-                    // Now, apply the value to the current instance.
+                    // Now, apply the value to the current instance. 
                     this[propName] = value;
 
                     // Check if this is the object we are looking for and trigger the callback.
@@ -1364,6 +1368,20 @@ C = Added patches
          * @returns {void}
          */
         initializeHooks() {
+            // --- This is the new hook for capturing the player object ---
+            this.hookIntoPrototype("tmpScore", (obj) => {
+                // A simple check to be reasonably sure this is the player object
+                if (obj && typeof obj.id !== 'undefined' && typeof obj.sid !== 'undefined') {
+                    Logger.log(`Player object found via prototype hook for "tmpScore".`, "color: #4CAF50;");
+                    this.state.playerObject = obj;
+                    window.player = obj; // Expose globally as requested
+                    this.state.playerObjectReady = true;
+
+                    // Now that we have the object, we can set up property watchers.
+                    this.onPlayerObjectReady();
+                }
+            });
+
             // Set up prototype hooks for both encoder and decoder
             const onCodecFound = () => {
                 if (this.state.gameEncoder && this.state.gameDecoder) {
@@ -1395,6 +1413,8 @@ C = Added patches
             const ENCODER_EXPOSURE = `$1 Logger.log("✅ CAPTURED ENCODER!"), window.gameEncoder = this,`;
             const DECODER_REGEX = /(this\.maxStrLength=\w,)/;
             const DECODER_EXPOSURE = `$1 Logger.log("✅ CAPTURED DECODER!"), window.gameDecoder = this,`;
+            const PLAYER_OBJ_REGEX = /(this\.id=e,this\.sid=t,this\.tmpScore=0)/;
+            const PLAYER_OBJ_EXPOSURE = `Logger.log("✅ CAPTURED PLAYER OBJECT!"), window.player=this,$1`;
 
             /**
              * Attempts to find and modify the game script to expose the codecs.
@@ -1421,7 +1441,8 @@ C = Added patches
                         let modifiedScript = scriptText
                             .replace(/(customElements\.define\("altcha-widget".*"verify"\],!1\)\);)/, '')
                             .replace(ENCODER_REGEX, ENCODER_EXPOSURE)
-                            .replace(DECODER_REGEX, DECODER_EXPOSURE);
+                            .replace(DECODER_REGEX, DECODER_EXPOSURE)
+                            .replace(PLAYER_OBJ_REGEX, PLAYER_OBJ_EXPOSURE);
 
                         if (!modifiedScript.includes("window.gameEncoder") || !modifiedScript.includes("window.gameDecoder")) return Logger.error("Script injection failed! Regex patterns did not match.");
 
@@ -1533,6 +1554,51 @@ C = Added patches
         },
 
         /**
+         * Runs once the client-side player object is captured, setting up property watchers.
+         * @private
+         * @returns {void}
+         */
+        onPlayerObjectReady() {
+            if (!this.state.enabled || !window.player) return;
+
+            try {
+                Object.defineProperties(window.player, {
+                    _x: { value: window.player.x, writable: true, configurable: true },
+                    _y: { value: window.player.y, writable: true, configurable: true },
+                    x: {
+                        get() {
+                            return this._x;
+                        },
+                        set(value) {
+                            if (MooMooUtilityMod.config.DEBUG_MODE && Math.abs(value - this._x) >= 1) {
+                                Logger.log(`X: ${value}, Y: ${this._y}`);
+                            }
+                            this._x = value;
+                        },
+                        enumerable: true,
+                        configurable: true
+                    },
+                    y: {
+                        get() {
+                            return this._y;
+                        },
+                        set(value) {
+                            if (MooMooUtilityMod.config.DEBUG_MODE && Math.abs(value - this._y) >= 1) {
+                                Logger.log(`X: ${this._x}, Y: ${value}`);
+                            }
+                            this._y = value;
+                        },
+                        enumerable: true,
+                        configurable: true
+                    }
+                });
+                Logger.log("Attached property watchers to player object.", "color: #4CAF50;");
+            } catch(e) {
+                Logger.error("Failed to attach property watchers to player object.", e);
+            }
+        },
+
+        /**
          * The main entry point for the script.
          * @returns {void}
          */
@@ -1549,7 +1615,7 @@ C = Added patches
             this.interceptGameScript(); // Typically succeeds 0.025x slower than mainMenu.
 
             // Set up hooks to intercept codecs as they enter the global scope.
-            // this.initializeHooks(); // Typically succeeds 0.5x slower than mainMenu.
+            this.initializeHooks(); // Typically succeeds 0.5x slower than mainMenu.
 
             // Set up WebSocket proxy to capture the game's WebSocket instance.
             this.setupWebSocketProxy();
