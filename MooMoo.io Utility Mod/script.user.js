@@ -1,10 +1,10 @@
 // ==UserScript==
-// @name         MOOMOO.IO Utility Mod! (Scrollable Inventory, Wearables Hotbar, Typing Indicator, More!)
+// @name         MOOMOO.IO Utility Mod! (Scrollable Inventory, Wearables Hotbar, Typing Indicator, & More!)
 // @namespace    https://greasyfork.org/users/137913
 // @description  Enhances MooMoo.io with mini-mods to level the playing field against cheaters whilst being fair to non-script users.
 // @license      GNU GPLv3 with the condition: no auto-heal or instant kill features may be added to the licensed material.
 // @author       TigerYT
-// @version      0.11.0
+// @version      1.0.0
 // @grant        GM_info
 // @match        *://moomoo.io/*
 // @match        *://dev.moomoo.io/*
@@ -229,6 +229,7 @@ C = Added patches
                 },
                 CSS: {
                     DISPLAY_NONE: 'none',
+                    DISPLAY_FLEX: 'flex',
                     DISPLAY_BLOCK: 'block',
                     OPAQUE: 1,
                 },
@@ -630,7 +631,6 @@ C = Added patches
 
             const isVisible = (id) => {
                 const elem = document.getElementById(id);
-                console.log(window.getComputedStyle(elem).opacity);
                 return elem && window.getComputedStyle(elem).display !== CoreC.CSS.DISPLAY_NONE && window.getComputedStyle(elem).opacity == CoreC.CSS.OPAQUE;
             };
 
@@ -1670,12 +1670,12 @@ C = Added patches
                 RESET_ALL_BUTTON_CLASS: 'reset-all-button',
             },
             TEXT: {
-                MOD_SETTINGS_HEADER: 'Mod Settings',
-                RESET_BUTTON_TEXT: 'Reset',
-                RESET_BUTTON_TITLE: 'Reset to default',
-                RESET_ALL_BUTTON_TEXT: 'Reset All Settings',
-                RESET_ALL_CONFIRM: 'Are you sure you want to reset all mod settings to their defaults? The page will reload.',
+                MOD_SETTINGS_HEADER: 'Gameplay Settings',
                 KEYBIND_FOCUS_TEXT: '...',
+                RESET_ALL_CONFIRM: 'Are you sure you want to reset all mod settings to their defaults? The page will reload.',
+                RESET_ALL_BUTTON_TEXT: 'Rexset All Settings',
+                RESET_BUTTON_TITLE: 'Reset to default',
+                RESET_BUTTON_TEXT: 'Reset',
             },
         },
 
@@ -1862,6 +1862,9 @@ C = Added patches
             this.config.isPanelVisible = false;
             this.removeSettingsCard();
 
+            const rightCardHolder = document.getElementById(LocalC.DOM.RIGHT_CARD_HOLDER);
+            if (leftCardHolder) rightCardHolder.querySelector('.menuHeader:has(+ .settingRadio)').textContent = 'Settings';
+
             // Remove the settings panel card
             const leftCardHolder = document.getElementById(LocalC.DOM.LEFT_CARD_HOLDER);
             if (leftCardHolder) leftCardHolder.remove();
@@ -1963,6 +1966,7 @@ C = Added patches
 
                 const rightCardHolder = menuCardHolder.lastElementChild;
                 if (!rightCardHolder) return; // Safety check
+                rightCardHolder.querySelector('.menuHeader:has(+ .settingRadio)').textContent = 'Display Settings';
 
                 const leftCardHolder = rightCardHolder.cloneNode(true);
                 leftCardHolder.id = LocalC.DOM.LEFT_CARD_HOLDER;
@@ -3020,7 +3024,7 @@ C = Added patches
             btn.addEventListener('click', () => {
                 const isCurrentlySelected = btn.classList.contains(LocalC.DOM.WEARABLE_SELECTED_CLASS);
                 const newItemId = isCurrentlySelected ? 0 : id;
-                this.core.sendGamePacket(CoreC.PACKET_TYPES.EQUIP_WEARABLE, [newItemId, type === CoreC.PACKET_DATA.WEARABLE_TYPES.HAT ? 0 : 1]);
+                this.core.sendGamePacket(CoreC.PACKET_TYPES.EQUIP_WEARABLE, [0, newItemId, type === CoreC.PACKET_DATA.WEARABLE_TYPES.HAT ? 0 : 1]);
             });
 
             container.append(btn);
@@ -3488,181 +3492,6 @@ C = Added patches
     };
 
     /**
-     * @module AssistedHealMiniMod
-     * @description A minimod that allows the player to automatically eat food by holding down a key.
-     */
-    const AssistedHealMiniMod = {
-
-        // --- MINI-MOD PROPERTIES ---
-
-        /** @property {object|null} core - A reference to the core module. */
-        core: null,
-
-        /** @property {string} name - The display name of the minimod. */
-        name: "Assisted Healing",
-
-        /** @property {object} config - Holds user-configurable settings. */
-        config: {
-            /** @property {boolean} enabled - Master switch for this minimod. */
-            enabled: false,
-            /** @property {string} HEAL_KEY - The key to hold down for continuous healing. */
-            HEAL_KEY: 'Q',
-            /** @property {number} HEAL_INTERVAL - How often to attempt to heal while the key is held. */
-            HEAL_INTERVAL: 250,
-        },
-
-        /** @property {object} state - Dynamic state for this minimod. */
-        state: {
-            /** @property {boolean} isHealKeyHeld - Tracks if the healing key is currently being pressed. */
-            isHealKeyHeld: false,
-            /** @property {number|null} healIntervalId - The ID of the interval used for continuous healing attempts. */
-            healIntervalId: null,
-            /** @property {number} lastHealTime - The timestamp of the last healing attempt. */
-            lastHealTime: 0,
-            /** @property {object} boundHandlers - Stores bound event handler functions for easy addition and removal of listeners. */
-            boundHandlers: {}
-        },
-
-        /**
-         * Defines the settings for this minimod.
-         * @returns {Array<object>} An array of setting definition objects.
-         */
-        getSettings() {
-            return [
-                {
-                    id: 'assist_heal_enabled',
-                    configKey: 'enabled',
-                    label: 'Enable Assisted Healing',
-                    desc: 'Hold a key to eat food automatically.',
-                    type: 'checkbox'
-                },
-                {
-                    id: 'assist_heal_key',
-                    configKey: 'HEAL_KEY',
-                    label: 'Heal Key',
-                    desc: 'The key to hold for healing.',
-                    type: 'keybind'
-                },
-                {
-                    id: 'assist_heal_interval',
-                    configKey: 'HEAL_INTERVAL',
-                    label: 'Heal Interval (ms)',
-                    desc: 'How often to try healing when key is held.',
-                    type: 'number', min: 50, max: 500
-                }
-            ];
-        },
-
-        // --- MINI-MOD LIFECYCLE & HOOKS ---
-
-        /**
-         * Adds all necessary event listeners for this minimod.
-         * @returns {void}
-         */
-        addEventListeners() {
-            this.state.boundHandlers.handleKeyDown = this.handleKeyDown.bind(this);
-            this.state.boundHandlers.handleKeyUp = this.handleKeyUp.bind(this);
-            document.addEventListener('keydown', this.state.boundHandlers.handleKeyDown);
-            document.addEventListener('keyup', this.state.boundHandlers.handleKeyUp);
-        },
-
-        /**
-         * Cleans up by stopping any active healing and removing event listeners.
-         * @returns {void}
-         */
-        cleanup() {
-            this.stopHealing();
-            document.removeEventListener('keydown', this.state.boundHandlers.handleKeyDown);
-            document.removeEventListener('keyup', this.state.boundHandlers.handleKeyUp);
-        },
-
-        // --- EVENT HANDLERS ---
-
-        /**
-         * Handles the `keydown` event to start the healing loop.
-         * @param {KeyboardEvent} event - The DOM keyboard event.
-         * @returns {void}
-         */
-        handleKeyDown(event) {
-            if (!this.config.enabled || this.core.isInputFocused() || event.key.toUpperCase() !== this.config.HEAL_KEY) return;
-
-            if (!this.state.isHealKeyHeld) {
-                this.state.isHealKeyHeld = true;
-                this.startHealing();
-            }
-        },
-
-        /**
-         * Handles the `keyup` event to stop the healing loop.
-         * @param {KeyboardEvent} event - The DOM keyboard event.
-         * @returns {void}
-         */
-        handleKeyUp(event) {
-            if (!this.config.enabled) return;
-
-            if (event.key.toUpperCase() === this.config.HEAL_KEY) {
-                this.state.isHealKeyHeld = false;
-                this.stopHealing();
-            }
-        },
-
-        // --- CORE LOGIC ---
-
-        /**
-         * Starts the healing interval.
-         * @returns {void}
-         */
-        startHealing() {
-            if (this.state.healIntervalId) return; // Already healing
-
-            Logger.log("Starting Assisted Heal.", "color: #00e676;");
-
-            // Immediately try to heal once, then start the interval
-            this.attemptHeal();
-            this.state.healIntervalId = setInterval(this.attemptHeal.bind(this), this.config.HEAL_INTERVAL);
-        },
-
-        /**
-         * Stops the healing interval.
-         * @returns {void}
-         */
-        stopHealing() {
-            if (this.state.healIntervalId) {
-                Logger.log("Stopping Assisted Heal.", "color: #ff1744;");
-                clearInterval(this.state.healIntervalId);
-                this.state.healIntervalId = null;
-            }
-        },
-
-        /**
-         * Finds and uses the first available food item.
-         * @returns {void}
-         */
-        attemptHeal() {
-            const CoreC = this.core.data.constants;
-
-            // Find the first available food item on the action bar
-            const actionBar = document.getElementById(CoreC.DOM.ACTION_BAR);
-            if (!actionBar) return;
-
-            const foodItemElem = Array.from(actionBar.children).find(el => {
-                const itemData = this.core.getItemFromElem(el);
-                return itemData && itemData.itemType === CoreC.ITEM_TYPES.FOOD && this.core.isEquippableItem(el);
-            });
-
-            if (foodItemElem) {
-                const foodItemData = this.core.getItemFromElem(foodItemElem);
-                if (foodItemData) {
-                    // The game uses an empty array for "use item at current location"
-                    this.core.sendGamePacket(CoreC.PACKET_TYPES.EQUIP_ITEM, [foodItemData.id, false]);
-                    this.core.sendGamePacket(CoreC.PACKET_TYPES.USE_ITEM, [CoreC.PACKET_DATA.USE_ACTIONS.START_USING]);
-                    this.core.sendGamePacket(CoreC.PACKET_TYPES.USE_ITEM, [CoreC.PACKET_DATA.USE_ACTIONS.STOP_USING]);
-                }
-            }
-        }
-    };
-
-    /**
      * @module ProximityChatMiniMod
      * @description Displays nearby player chats in a Minecraft/Roblox-style chatbox,
      * showing player names, leaderboard ranks, and timestamps.
@@ -3680,8 +3509,10 @@ C = Added patches
         config: {
             /** @property {boolean} enabled - Master switch for this minimod. */
             enabled: true,
+            /** @property {string} TOGGLE_KEY - The hotkey to show or hide the toolbar. */
+            TOGGLE_KEY: 'T',
             /** @property {number} maxMessages - The maximum number of messages to keep in the chatbox. */
-            maxMessages: 100
+            maxMessages: 12
         },
 
         /** @property {object} constants - Constants specific to this minimod. */
@@ -3695,6 +3526,8 @@ C = Added patches
 
         /** @property {object} state - Dynamic state for this minimod. */
         state: {
+            /** @property {boolean} isVisible - Whether the toolbar UI is currently shown. */
+            isVisible: true,
             /** @property {Map<number, object>} players - Maps player SID to their data {id, name}. */
             players: new Map(),
             /** @property {Map<number, number>} leaderboard - Maps player SID to their rank. */
@@ -3702,7 +3535,9 @@ C = Added patches
             /** @property {HTMLElement|null} chatboxContainer - Reference to the main chatbox UI element. */
             chatboxContainer: null,
             /** @property {HTMLElement|null} messagesContainer - Reference to the inner element that holds messages. */
-            messagesContainer: null
+            messagesContainer: null,
+            /** @property {object} boundHandlers - Stores bound event handler functions for easy addition and removal of listeners. */
+            boundHandlers: {}
         },
 
         /**
@@ -3718,6 +3553,13 @@ C = Added patches
                     desc: 'Shows nearby chats in a custom chatbox.',
                     type: 'checkbox',
                     onChange: (value) => this.toggleFeature(value)
+                },
+                {
+                    id: 'proximity_chat_toggle_key',
+                    configKey: 'TOGGLE_KEY',
+                    label: 'Toggle Chatbox Key',
+                    desc: 'Press to show or hide the chatbox.',
+                    type: 'keybind'
                 },
                 {
                     id: 'proximity_chat_max_messages',
@@ -3738,8 +3580,10 @@ C = Added patches
         init() {
             if (!this.config.enabled) return;
 
+            const CoreC = this.core.data.constants;
+
             // Wait for the main game UI to be ready before injecting our chatbox
-            this.core.waitForElementsToLoad(this.core.data.constants.DOM.GAME_UI).then(gameUI => {
+            this.core.waitForElementsToLoad(CoreC.DOM.GAME_UI).then(gameUI => {
                 const chatboxContainer = document.createElement('div');
                 chatboxContainer.id = this.constants.DOM.CHATBOX_CONTAINER_ID;
 
@@ -3753,6 +3597,17 @@ C = Added patches
 
                 this.state.chatboxContainer = chatboxContainer;
                 this.state.messagesContainer = messagesContainer;
+
+                this.state.boundHandlers.handleKeyDown = (e) => {
+                    if (!this.config.enabled || this.core.isInputFocused()) return;
+
+                    if (e.key.toUpperCase() === this.config.TOGGLE_KEY) {
+                        this.state.isVisible = !this.state.isVisible;
+                        this.state.chatboxContainer.style.display = this.state.isVisible ? CoreC.CSS.DISPLAY_FLEX : CoreC.CSS.DISPLAY_NONE;
+                    }
+                };
+
+                document.addEventListener('keydown', this.state.boundHandlers.handleKeyDown);
             });
         },
         
@@ -3790,6 +3645,10 @@ C = Added patches
                     &:hover {
                         opacity: 1;
                     }
+
+                    &:not(:has(.${LocalC.DOM.CHAT_MESSAGE_CLASS})):is(&, &:hover) {
+                        opacity: 0;
+                    }
                 }
 
                 #${LocalC.DOM.CHATBOX_CONTAINER_ID}::-webkit-scrollbar {
@@ -3815,6 +3674,7 @@ C = Added patches
                     margin-top: 4px;
                     text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7);
                     animation: fadeIn 0.3s ease-in-out;
+                    transition: 1s;
                 }
                 
                 @keyframes fadeIn {
@@ -3847,6 +3707,8 @@ C = Added patches
             this.state.messagesContainer = null;
             this.state.players.clear();
             this.state.leaderboard.clear();
+            
+            document.removeEventListener('keydown', this.state.boundHandlers.handleKeyDown);
         },
 
         /**
@@ -3912,7 +3774,7 @@ C = Added patches
          * @param {number} sid - The sender's session ID.
          * @param {string} message - The chat message content.
          */
-        addChatMessage(sid, message) {
+        async addChatMessage(sid, message) {
             if (!this.config.enabled || !this.state.messagesContainer) return;
 
             const playerInfo = this.state.players.get(sid);
@@ -3951,7 +3813,14 @@ C = Added patches
             this.state.messagesContainer.appendChild(msgElement);
 
             if (this.state.messagesContainer.children.length > this.config.maxMessages) {
-                this.state.messagesContainer.removeChild(this.state.messagesContainer.firstChild);
+                const lastMessage = this.state.messagesContainer.firstChild;
+
+                lastMessage.style.opacity = '0';
+                lastMessage.style.translateY = '-10px';
+
+                await this.core.wait(1000);
+
+                this.state.messagesContainer.removeChild(lastMessage);
             }
         },
     };
@@ -3962,7 +3831,6 @@ C = Added patches
     MooMooUtilityMod.registerMod(ScrollInventoryMiniMod);
     MooMooUtilityMod.registerMod(WearablesToolbarMiniMod);
     MooMooUtilityMod.registerMod(TypingIndicatorMiniMod);
-    MooMooUtilityMod.registerMod(AssistedHealMiniMod);
     MooMooUtilityMod.registerMod(ProximityChatMiniMod);
 
     MooMooUtilityMod.init();
