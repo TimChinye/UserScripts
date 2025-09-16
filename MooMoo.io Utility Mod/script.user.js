@@ -1416,9 +1416,9 @@ C = Added patches
 
             const SCRIPT_SELECTOR = "/assets/index-eb87bff7.js";
             const ENCODER_REGEX = /(this\.initialBufferSize=\w,)/;
-            const ENCODER_EXPOSURE = `$1 Logger.log("✅ CAPTURED ENCODER!"), window.gameEncoder = this,`;
+            const ENCODER_EXPOSURE = `$1 (typeof Logger !== 'undefined' && Logger.log("✅ CAPTURED ENCODER!")), window.gameEncoder = this,`;
             const DECODER_REGEX = /(this\.maxStrLength=\w,)/;
-            const DECODER_EXPOSURE = `$1 Logger.log("✅ CAPTURED DECODER!"), window.gameDecoder = this,`;
+            const DECODER_EXPOSURE = `$1 (typeof Logger !== 'undefined' && Logger.log("✅ CAPTURED DECODER!")), window.gameDecoder = this,`;
 
             /**
              * Attempts to find and modify the game script to expose the codecs.
@@ -1562,7 +1562,7 @@ C = Added patches
          */
         init() {
             // Exposes the logger to the global window object for debugging purposes.
-            if (this.config.DEBUG_MODE) window.Logger = Logger;
+            window.Logger = Logger;
 
             getGMInfo().then((gmInfo) => {
                 Logger.log(`--- MOOMOO.IO Utility Mod (v${gmInfo.script.version}) Initializing ---`, "color: #ffb700; font-weight: bold;");
@@ -1573,7 +1573,7 @@ C = Added patches
             this.interceptGameScript(); // Typically succeeds 0.025x slower than mainMenu.
             
             // Set up hooks to intercept codecs as they enter the global scope.
-            // this.initializeHooks(); // Typically succeeds 0.5x slower than mainMenu.
+            this.initializeHooks(); // Typically succeeds 0.5x slower than mainMenu.
             
             // Set up WebSocket proxy to capture the game's WebSocket instance.
             this.setupWebSocketProxy();
@@ -1589,7 +1589,7 @@ C = Added patches
 
                         Logger.error("Hooks failed to find codecs within the time limit.");
                         this.handleHookFailureAndReload();
-                    }, ((Date.now() - this.state.initTimestamp) + 100) * 2.5); // If no success after 1.5x the mainMenu, assume failure.
+                    }, ((Date.now() - this.state.initTimestamp) + 250) * 2.5); // If no success after 1.5x the mainMenu, assume failure.
                 });
             });
 
@@ -1619,7 +1619,7 @@ C = Added patches
             });
 
             // Exposes the core to the global window object for debugging purposes.
-            if (this.config.DEBUG_MODE) window.MooMooUtilityMod = this;
+            window.MooMooUtilityMod = this;
         },
 
         // --- MINI-MOD MANAGEMENT ---
