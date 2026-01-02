@@ -2621,7 +2621,7 @@ C = Added patches
                     id: 'wearables_toolbar_enabled',
                     configKey: 'enabled',
                     label: 'Enable Wearables Toolbar',
-                    desc: 'Adds a draggable hotbar for accessories.',
+                    desc: 'Adds a hotbar for hats & accessories.',
                     type: 'checkbox',
                     onChange: (value) => this.toggleFeature(value)
                 },
