@@ -4,7 +4,7 @@
 // @description  Enhances MooMoo.io with mini-mods to level the playing field against cheaters whilst being fair to non-script users.
 // @license      GNU GPLv3 with the condition: no auto-heal or instant kill features may be added to the licensed material.
 // @author       TigerYT
-// @version      1.0.0
+// @version      1.0.2
 // @grant        GM_info
 // @match        *://moomoo.io/*
 // @match        *://dev.moomoo.io/*
@@ -2184,7 +2184,9 @@ C = Added patches
             /** @property {boolean} enabled - Master switch for this minimod. */
             enabled: true,
             /** @property {boolean} INVERT_SCROLL - If true, reverses the scroll direction for item selection. */
-            INVERT_SCROLL: false
+            INVERT_SCROLL: false,
+            /** @property {boolean} SCROLL_WHEEL_ENABLED - If false, disables the wheel but keeps the UI highlights. */
+            SCROLL_WHEEL_ENABLED: true 
         },
 
         /** @property {object} constants - Constants specific to this minimod. */
@@ -2219,7 +2221,14 @@ C = Added patches
                 {
                     id: 'scroll_inv_enabled',
                     configKey: 'enabled',
-                    label: 'Enable Scroll Inventory',
+                    label: 'Enable Inventory Mod',
+                    desc: 'Adds QOL improvements to the inventory.',
+                    type: 'checkbox'
+                },
+                {
+                    id: 'scroll_inv_wheel_enabled',
+                    configKey: 'SCROLL_WHEEL_ENABLED',
+                    label: 'Enable Mouse Wheel',
                     desc: 'Use scroll wheel to cycle through items.',
                     type: 'checkbox'
                 },
@@ -2358,7 +2367,8 @@ C = Added patches
          * @returns {void}
          */
         handleInventoryScroll(event) {
-            if (!this.config.enabled) return;
+            // Check both master enabled AND the new scroll wheel specific setting
+            if (!this.config.enabled || !this.config.SCROLL_WHEEL_ENABLED) return;
 
             const CoreC = this.core.data.constants;
             if (this.core.isInputFocused() || !this.core.state.gameSocket || this.core.state.gameSocket.readyState !== CoreC.GAME_STATE.WEBSOCKET_STATE_OPEN) return;
