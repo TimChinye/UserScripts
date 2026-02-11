@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         MOOMOO.IO Utility Mod! (Scrollable Inventory, Wearables Hotbar, Typing Indicator, & More!)
+// @name         MOOMOO.IO Utility Mod! *2026* (Scrollable Inventory, Wearables Hotbar, Typing Indicator, & More!)
 // @namespace    https://greasyfork.org/users/137913
 // @description  Enhances MooMoo.io with mini-mods to level the playing field against cheaters whilst being fair to non-script users.
 // @license      GNU GPLv3 with the condition: no auto-heal or instant kill features may be added to the licensed material.
