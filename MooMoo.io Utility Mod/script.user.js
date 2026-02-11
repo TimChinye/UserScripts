@@ -4,7 +4,7 @@
 // @description  Enhances MooMoo.io with mini-mods to level the playing field against cheaters whilst being fair to non-script users.
 // @license      GNU GPLv3 with the condition: no auto-heal or instant kill features may be added to the licensed material.
 // @author       TigerYT
-// @version      1.0.3
+// @version      1.0.4
 // @grant        GM_info
 // @match        *://moomoo.io/*
 // @match        *://dev.moomoo.io/*
