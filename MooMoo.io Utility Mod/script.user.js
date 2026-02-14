@@ -1449,10 +1449,10 @@ C = Added patches
          * @returns {void}
          */
         hookIntoPrototype(propName, onFound) {
-            if (!this.state.enabled) return; // Already disabled, no need to proceed.
+            if (!MooMooUtilityMod.state.enabled) return; // Already disabled, no need to proceed.
 
             Logger.log(`Setting up prototype hook for: ${propName}`);
-            if (this.state?.codecsReady) return Logger.log("Both codecs found already, cancelling prototype hooks method.", "color: #4CAF50;");
+            if (MooMooUtilityMod.state?.codecsReady) return Logger.log("Both codecs found already, cancelling prototype hooks method.", "color: #4CAF50;");
 
             const originalDesc = Object.getOwnPropertyDescriptor(Object.prototype, propName);
             Object.defineProperty(Object.prototype, propName, {
@@ -1510,10 +1510,10 @@ C = Added patches
          * @returns {void}
          */
         interceptGameScript() {
-            if (!this.state.enabled) return; // Already disabled, no need to proceed.
+            if (!MooMooUtilityMod.state.enabled) return; // Already disabled, no need to proceed.
             Logger.log("Attempting to intercept and modify the game script...");
 
-            const CoreC = this.data.constants;
+            const CoreC = MooMooUtilityMod.data.constants;
 
             const SCRIPT_SELECTOR = "/assets/index-";
             const ENCODER_REGEX = /(this\.initialBufferSize=\w,)/;
@@ -1527,8 +1527,8 @@ C = Added patches
              * @param {MutationObserver} [observer] - The MutationObserver instance to disconnect if the script is found.
              */
             const leaveBackdoorOpen = (observer) => {
-                if (!this.state.enabled) return; // Already disabled, no need to proceed.
-                if (this.state?.codecsReady) return Logger.log("Both codecs found already, cancelling prototype hooks method.", "color: #4CAF50;");
+                if (!MooMooUtilityMod.state.enabled) return; // Already disabled, no need to proceed.
+                if (MooMooUtilityMod.state?.codecsReady) return Logger.log("Both codecs found already, cancelling script injection method.", "color: #4CAF50;");
 
                 const targetScript = document.querySelector(`script[src*="${SCRIPT_SELECTOR}"]`);
                 if (targetScript) {
@@ -1540,11 +1540,10 @@ C = Added patches
                     fetch(targetScript.src)
                         .then(res => res.text())
                         .then(scriptText => {
-                            if (!this.state.enabled) return; // Already disabled, no need to proceed.
-                            if (this.state?.codecsReady) return Logger.log("Both codecs found already, cancelling prototype hooks method.", "color: #4CAF50;");
+                            if (!MooMooUtilityMod.state.enabled) return; // Already disabled, no need to proceed.
+                            if (MooMooUtilityMod.state?.codecsReady) return Logger.log("Both codecs found already, cancelling script injection method.", "color: #4CAF50;");
 
                             let modifiedScript = scriptText
-                                .replace(/(customElements\.define\("altcha-widget".*"verify"\],!1\)\);)/, '')
                                 .replace(ENCODER_REGEX, ENCODER_EXPOSURE)
                                 .replace(DECODER_REGEX, DECODER_EXPOSURE);
 
@@ -1556,8 +1555,8 @@ C = Added patches
 
                             // This is the function we want to run once the DOM is ready.
                             const injectAndFinalize = () => {
-                                if (!this.state.enabled) return; // Already disabled, no need to proceed.
-                                if (this.state?.codecsReady) return Logger.log("Both codecs found already, cancelling prototype hooks method.", "color: #4CAF50;");
+                                if (!MooMooUtilityMod.state.enabled) return; // Already disabled, no need to proceed.
+                                if (MooMooUtilityMod.state?.codecsReady) return Logger.log("Both codecs found already, cancelling script injection method.", "color: #4CAF50;");
 
                                 // Make sure this only runs once, in case of any edge cases.
                                 if (document.contains(newScript)) return;
@@ -1571,13 +1570,13 @@ C = Added patches
                                 // Use setTimeout to allow the newly injected script to execute and populate the window object.
                                 setTimeout(() => {
                                     if (window.gameEncoder && window.gameDecoder) {
-                                        Logger.log(`Codec interception successful! ${Date.now() - this.state.initTimestamp}ms`, "color: #4CAF50; font-weight: bold;");
+                                        Logger.log(`Codec interception successful! ${Date.now() - MooMooUtilityMod.state.initTimestamp}ms`, "color: #4CAF50; font-weight: bold;");
 
-                                        this.state.gameEncoder = window.gameEncoder;
-                                        this.state.gameDecoder = window.gameDecoder;
-                                        this.state.codecsReady = true;
+                                        MooMooUtilityMod.state.gameEncoder = window.gameEncoder;
+                                        MooMooUtilityMod.state.gameDecoder = window.gameDecoder;
+                                        MooMooUtilityMod.state.codecsReady = true;
 
-                                        this.attemptFinalSetup();
+                                        MooMooUtilityMod.attemptFinalSetup();
                                     } else {
                                         Logger.error("Codecs were not found on window after injection.");
                                     }
