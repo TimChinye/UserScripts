@@ -1,10 +1,10 @@
 // ==UserScript==
-// @name         MOOMOO.IO Utility Mod! (Scrollable Inventory, Wearables Hotbar, Typing Indicator, & More!)
+// @name         MOOMOO.IO Utility Mod! *2026* (Scrollable Inventory, Wearables Hotbar, Typing Indicator, & More!)
 // @namespace    https://greasyfork.org/users/137913
 // @description  Enhances MooMoo.io with mini-mods to level the playing field against cheaters whilst being fair to non-script users.
 // @license      GNU GPLv3 with the condition: no auto-heal or instant kill features may be added to the licensed material.
 // @author       TigerYT
-// @version      1.0.3
+// @version      1.0.4
 // @grant        GM_info
 // @match        *://moomoo.io/*
 // @match        *://dev.moomoo.io/*
@@ -834,7 +834,7 @@ C = Added patches
 
                 // If the initial check didn't find everything, start observing.
                 if (remainingKeys.size > 0) {
-                    observer.observe(document.body, { childList: true, subtree: true });
+                    observer.observe(document.documentElement, { childList: true, subtree: true });
                     // Assuming 'this.state.observers' exists from your original context
                     if (this.state && this.state.observers) {
                         this.state.observers.push(observer);
@@ -1142,7 +1142,7 @@ C = Added patches
                 const style = document.createElement('style');
                 style.id = CoreC.DOM.UTILITY_MOD_STYLES;
                 style.textContent = allCSS.join('\n\n/* --- CSS Separator --- */\n\n');
-                document.head.append(style);
+                (document.head || document.documentElement).append(style);
                 Logger.log(`Injected CSS from core and ${this.miniMods.filter(m => typeof m.applyCSS === 'function' && m.applyCSS().trim()).length} mini-mod(s).`, "color: #4CAF50;");
             } else {
                 Logger.log("No CSS to inject.");
@@ -1171,7 +1171,7 @@ C = Added patches
                 const style = document.createElement('style');
                 style.id = CoreC.DOM.UTILITY_MOD_GAME_STYLES;
                 style.textContent = allCSS.join('\n\n/* --- CSS Separator --- */\n\n');
-                document.head.append(style);
+                (document.head || document.documentElement).append(style);
                 Logger.log(`Injected Gameplay CSS.`, "color: #4CAF50;");
             }
         },
@@ -1560,9 +1560,9 @@ C = Added patches
                                 if (this.state?.codecsReady) return Logger.log("Both codecs found already, cancelling prototype hooks method.", "color: #4CAF50;");
 
                                 // Make sure this only runs once, in case of any edge cases.
-                                if (document.body.contains(newScript)) return;
+                                if (document.contains(newScript)) return;
 
-                                document.head.append(newScript);
+                                (document.head || document.documentElement).append(newScript);
                                 targetScript.remove();
 
                                 Logger.log("Modified game script injected.", "color: #4CAF50;");
